@@ -8,6 +8,7 @@ import {
   ArrowSquareOut,
   Check,
   CheckSquare,
+  Play,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
@@ -54,6 +55,17 @@ export default function Notifications() {
       await api.post(`/automation/notifications/${id}/read`);
       await load();
     } catch (_e) { /* ignore */ }
+  };
+
+  const resumeAndMarkRead = async (id) => {
+    try {
+      await api.post("/automation/resume");
+      await api.post(`/automation/notifications/${id}/read`);
+      toast.success("Verifikasi ditandai selesai — automation dilanjutkan");
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal resume");
+    }
   };
 
   const markAllRead = async () => {
@@ -136,9 +148,23 @@ export default function Notifications() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 mt-2 underline"
+                    data-testid="notif-action-url"
                   >
                     Buka URL <ArrowSquareOut size={12} />
                   </a>
+                )}
+                {n.kind === "verification" && !n.read && (
+                  <div className="mt-3">
+                    <Button
+                      onClick={() => resumeAndMarkRead(n.id)}
+                      data-testid="notif-verify-done"
+                      size="sm"
+                      className="bg-green-500 hover:bg-green-600 text-black font-bold rounded-md h-8"
+                    >
+                      <Play size={14} weight="fill" className="mr-1" />
+                      Sudah Selesai — Resume Automation
+                    </Button>
+                  </div>
                 )}
               </div>
               {!n.read && (

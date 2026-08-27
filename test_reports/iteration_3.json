@@ -1,0 +1,37 @@
+{
+  "summary": "Backend-only regression + plumbing verification of iter3 automation_engine.py rewrite. Added /app/backend/tests/test_bugfixes_iter3.py with 11 targeted tests covering RequestWebViewRequest import, new AutomationRunner attributes (_last_mancing_at, _session_active), new methods (_session_likely_running, _process_session_result), _do_sell signature with mancing_retry kwarg, _handle_verification webview-before-pause behavior, _cycle_vip gating on _session_likely_running, _extract_and_sell KONFIRMASI-then-Ya flow, plus regression on admin/health endpoints. Ran full suite (backend_test.py + iter2 + iter3). Result: 47/48 passed (97.9%).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "N/A (inspection test)", "issue": "test_bugfixes_iter2.py::TestAutomationRunnerPlumbing::test_do_fishing_session_passes_extend_on_active FAILS because the iter3 rewrite inlined _do_fishing_session logic into _cycle_vip / _cycle_group (method no longer exists). Behavior is preserved — both _cycle_vip (line ~385) and _cycle_group (line ~456) explicitly pass extend_on_active=True to _wait_for_message. The obsolete iter2 test should be removed or updated to inspect _cycle_vip/_cycle_group instead of _do_fishing_session. Not a functional regression."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_bugfixes_iter3.py",
+    "/app/backend/tests/test_bugfixes_iter2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter3_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Remove or update the obsolete iter2 test test_do_fishing_session_passes_extend_on_active — it references a method that was intentionally inlined during iter3 rewrite. The equivalent behavior is already verified by iter2's test_cycle_group_passes_extend_on_active and can be extended with a symmetric _cycle_vip inspection."
+  ],
+  "critical_code_review_comments": [
+    "automation_engine.py is now 880 lines — approaching the 700-line split threshold. Consider splitting into modules: session_lifecycle (mancing/session gating), sell_flow (_do_sell, _inventory_favorite, gift handling), extract_flow (_extract_and_sell), verification (_handle_verification, webview logic).",
+    "_do_sell uses recursive retry via `await self._do_sell(...)` with mancing_retry+1 — safe (bounded at 2) but recursion inside long-running loop increases stack noise on gift+mancing combined paths. An iterative while-loop would be cleaner and easier to reason about for retry counters.",
+    "_handle_verification imports KeyboardButtonSimpleWebView/KeyboardButtonWebView inside the except block. Move to module-level imports for clarity and to avoid repeated import overhead on every failed click.",
+    "In _handle_verification the WebView 'success' pattern `session_done_pattern + r|berhasil|sukses|...` string-concatenates onto session_done_pattern — if session_done_pattern already ends in a group without a trailing alternation-safe boundary, this can silently mis-anchor. Prefer explicit `f'(?:{cfg.session_done_pattern})|(?:berhasil|sukses|...)'`.",
+    "RequestWebViewRequest fallback uses `platform=\"android\"` hardcoded and passes the chat entity as both peer and bot; validate that this is correct for user-side WebView invocation (bot should be the bot entity, peer can be same, but if chat is a group the bot entity should be resolved separately).",
+    "_session_likely_running relies on vip_fish_seconds + 15s slack — group flow uses same threshold but bots may have different session lengths per user; consider making the slack configurable via a config field."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bugfixes_iter3.py (new)"
+  ],
+  "success_rate": {"backend": "97.9% (47/48)", "frontend": "not tested (per request)"},
+  "test_credentials": "admin@fishit.app / Admin@Fishit2026 (from /app/memory/test_credentials.md); regular test users registered per-test via /api/auth/register",
+  "seed_data_creation": "None beyond ephemeral registered test users (pattern: test_*, iter2_*, iter3_*, regtest_*, empty_*, tg_* @fishit.app).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 rewrite of automation_engine.py verified via introspection + regression. All new attributes/methods present: _last_mancing_at, _session_active, _session_likely_running(cfg), _process_session_result(chat,cfg,result_msg), _do_sell(cfg,chat,retry_after_favorite=False,mancing_retry=0). _handle_verification now tries webview_invoked=await btn.click() first, waits 30s, only pauses on failure. _cycle_vip gates /mancing on _session_likely_running(cfg) to prevent 60s spam. _extract_and_sell awaits KONFIRMASI ARTEFAK and clicks 'Ya' before EXTRACT BERHASIL. RequestWebViewRequest imports cleanly. One obsolete iter2 test needs removal (documented above). Real Telegram flows cannot be exercised in-container — need live phone/session testing for /mancing spam fix, extract confirmation click, sell rejection retry, and WebView auto-verify.",
+  "rca of the issue": "N/A — no functional bugs found. The single test failure is a stale test asserting the existence of a method (_do_fishing_session) that was intentionally refactored away during the iter3 rewrite; equivalent behavior exists inline in _cycle_vip/_cycle_group."
+}

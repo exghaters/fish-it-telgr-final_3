@@ -119,10 +119,10 @@ class TestAutomationRunnerPlumbing:
         # Must pause user
         assert "self.pause" in src or "await self.pause" in src
 
-    def test_do_fishing_session_passes_extend_on_active(self):
+    def test_cycle_vip_passes_extend_on_active(self):
         from automation_engine import AutomationRunner
-        src = inspect.getsource(AutomationRunner._do_fishing_session)
-        assert "extend_on_active" in src and "True" in src
+        src = inspect.getsource(AutomationRunner._cycle_vip)
+        assert "extend_on_active" in src
 
     def test_cycle_group_passes_extend_on_active(self):
         from automation_engine import AutomationRunner

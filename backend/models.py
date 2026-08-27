@@ -117,6 +117,8 @@ class AutomationConfig(BaseModel):
     session_done_pattern: str = r"(SESI MANCING SELESAI|mancing selesai|WAKTU HABIS)"
     pendaftaran_pattern: str = r"(PENDAFTARAN DIBUKA|Pendaftaran Berhasil)"
     gift_message_pattern: str = r"✨\s*(SECRET SHINY|SECRET|CELESTIAL|MYTHIC)\s*✨"
+    already_fishing_pattern: str = r"(sedang memancing|masih memancing|sedang aktif)"
+    extract_list_pattern: str = r"(Bisa di-extract|extract semua artefak|EXTRACT.*Inventory)"
     gift_rarity_pattern: str = r"(SECRET SHINY|SECRET|CELESTIAL|MYTHIC|Mythical)"
     rare_pattern: str = r"(legend|myth|epic|artefak)"
     inventory_full_pattern: str = r"(inventory.*(penuh|full)|slot terisi.*\d+/\d+|tas.*penuh)"

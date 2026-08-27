@@ -266,6 +266,20 @@ export default function Configuration() {
               className="bg-[#05050A] border-white/10 font-mono text-xs"
             />
           </Field>
+          <Field label='Pattern "Sedang Memancing" (perpanjang menunggu)'>
+            <Input
+              value={cfg.already_fishing_pattern || ""}
+              onChange={(e) => update("already_fishing_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field label="Pattern Extract List (Bisa di-extract...)">
+            <Input
+              value={cfg.extract_list_pattern || ""}
+              onChange={(e) => update("extract_list_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
           <Field label="Pattern Verifikasi">
             <Input
               value={cfg.verification_pattern}

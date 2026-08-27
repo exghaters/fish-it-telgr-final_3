@@ -135,6 +135,30 @@ class UserTelegram:
                 log.exception("handler error: %s", exc)
 
         client.add_event_handler(on_message, events.NewMessage())
+
+        # Also listen for edits so button/state changes on same message reach us.
+        async def on_edited(event):
+            try:
+                item = {
+                    "type": "edited",
+                    "chat_id": event.chat_id,
+                    "message_id": event.id,
+                    "text": event.raw_text or "",
+                    "is_reply": event.is_reply,
+                    "date": event.date.isoformat() if event.date else None,
+                }
+                try:
+                    self.event_queue.put_nowait(item)
+                except asyncio.QueueFull:
+                    try:
+                        self.event_queue.get_nowait()
+                    except Exception:
+                        pass
+                    self.event_queue.put_nowait(item)
+            except Exception as exc:
+                log.exception("edit handler error: %s", exc)
+
+        client.add_event_handler(on_edited, events.MessageEdited())
         self._handler_installed = True
 
     async def send_command(self, chat: str, text: str):

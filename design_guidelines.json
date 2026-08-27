@@ -1,0 +1,128 @@
+{
+  "project_context": {
+    "name": "Fish It Automation Dashboard",
+    "type": "hybrid_fullstack",
+    "theme_preference": "dark_mode_only",
+    "vibe": "Cyberpunk Gaming meets High-Contrast SaaS"
+  },
+  "typography": {
+    "primary_heading": {
+      "font": "Unbounded",
+      "fallback": "sans-serif",
+      "usage": "H1-H4, large stats, marketing heroes",
+      "weight": "700-900"
+    },
+    "body": {
+      "font": "Outfit",
+      "fallback": "sans-serif",
+      "usage": "Paragraphs, UI text, standard tables",
+      "weight": "300-500"
+    },
+    "monospace": {
+      "font": "JetBrains Mono",
+      "fallback": "monospace",
+      "usage": "Activity logs, API Keys, Telegram IDs, OTP inputs",
+      "weight": "400"
+    }
+  },
+  "colors": {
+    "background": {
+      "main": "#05050A",
+      "surface": "#0F0F16",
+      "surface_elevated": "#1A1A24"
+    },
+    "brand": {
+      "primary": "#EC4899",
+      "secondary": "#EAB308",
+      "accent": "#06B6D4"
+    },
+    "status": {
+      "success": "#22C55E",
+      "error": "#EF4444",
+      "warning": "#F59E0B",
+      "info": "#3B82F6"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#94A3B8",
+      "muted": "#475569"
+    },
+    "borders": {
+      "default": "rgba(255, 255, 255, 0.1)",
+      "focus": "#EC4899"
+    }
+  },
+  "layouts": {
+    "marketing": {
+      "strategy": "Bento Grid (Mode A) with aggressive asymmetry.",
+      "hero_overlay": "bg-black/40 (never darker than 50%).",
+      "spacing": "py-24 or py-32 for sections."
+    },
+    "dashboard": {
+      "navigation": "Left-aligned collapsible sidebar.",
+      "grid": "High Density Grid (Mode B) - tight gaps (gap-4).",
+      "panels": "Cardless or sharp 4px rounded borders with 1px border-white/10.",
+      "spacing": "p-6 internal padding for panels."
+    }
+  },
+  "components": {
+    "buttons": "Pill-shaped for marketing, sharp/4px rounded for dashboard. Primary uses #EC4899 background. Never use generic 'blue'.",
+    "inputs": "Solid #0F0F16 background, 1px white/10 border, focus ring with #EC4899.",
+    "activity_log": "Terminal style: JetBrains Mono, #05050A bg, auto-scroll, colored prefix tags (e.g., [INFO], [RARE], [ERROR]).",
+    "tables": "Dense rows. Hover states MUST have text color explicitly set (hover:bg-white/5 hover:text-white).",
+    "toasts": "Use Sonner. Position bottom-right. Dark theme.",
+    "modals": "Used for OTP/2FA and 'Verification Required' blocker. Must use backdrop-blur-xl and solid bg-black/80 for the overlay. The modal itself should be bg-[#0F0F16]."
+  },
+  "visual_enhancers": {
+    "glassmorphism": "Used ONLY for floating navs and modal overlays. backdrop-blur-xl, bg-black/60, 1px border-white/10.",
+    "tracing_beam": "Apply to the active bot status card and 'Elite' pricing tier. An animated 1px gradient border.",
+    "glow": "Subtle neon pink drop-shadow on primary active buttons: shadow-[0_0_15px_rgba(236,72,153,0.4)].",
+    "texture": "Subtle noise/grain overlay on the marketing hero section."
+  },
+  "motion": {
+    "hover": "Elements lift (-translate-y-1), borders lighten, and glow intensifies.",
+    "active_status": "A small green dot with animate-pulse next to 'Running' status.",
+    "transitions": "Use specific transitions (transition-colors, transition-transform), NEVER 'transition-all'."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over images has sufficient contrast (use text-shadow or gradients if needed).",
+    "focus": "focus:ring-2 focus:ring-pink-500 focus:outline-none on all interactive elements.",
+    "data_testid": "MANDATORY on all buttons, inputs, links, and key status elements (e.g., data-testid='bot-status-indicator')."
+  },
+  "image_urls": {
+    "marketing_hero": "https://images.unsplash.com/photo-1633218388467-539651dcf81f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwyfHxkYXJrJTIwbmVvbiUyMHRlY2glMjBhYnN0cmFjdCUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzg3ODA5ODUwfDA&ixlib=rb-4.1.0&q=85",
+    "marketing_features": "https://images.unsplash.com/photo-1565214975484-3cfa9e56f914?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxkZWVwJTIwZGFyayUyMG9jZWFuJTIwd2F2ZXN8ZW58MHx8fHwxNzg3ODA5ODUwfDA&ixlib=rb-4.1.0&q=85"
+  },
+  "tech_stack": [
+    "React (JS, NOT TSX)",
+    "Tailwind CSS",
+    "Shadcn/UI primitives",
+    "Framer Motion",
+    "Phosphor Icons (@phosphor-icons/react)",
+    "Sonner (for toasts)"
+  ],
+  "instructions_to_main_agent": [
+    "Install required fonts (Unbounded, Outfit, JetBrains Mono) via Google Fonts in index.html.",
+    "Install @phosphor-icons/react for icons. Do NOT use emojis for icons.",
+    "Use JS/JSX for all React components, do not use TypeScript/TSX.",
+    "DO NOT use 'teal green' or 'teal blue' (#1B93A4) for dashboards. Use the provided Cyber Yellow or Hot Pink accents.",
+    "For the Activity Log, implement a clean, auto-scrolling terminal-like view.",
+    "The 'Verification Required' modal must pause UI interaction until the user resolves it or clicks a fallback 'Pause Bot' action.",
+    "Implement real-time status indicators (Idle, Fishing, Verifying, Error).",
+    "Never use completely transparent backgrounds for elements with content inside them (like dropdowns or modals)."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this: make creative, distinctive frontends.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) for floating elements.",
+    "You MUST NOT apply universal transition (e.g., transition: all). Always add transitions for specific interactive elements.",
+    "You MUST NOT center align the app container, i.e., do not add .App { text-align: center; }.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 for icons.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "All interactive and key informational elements MUST include a 'data-testid' attribute.",
+    "Use sonner for toast notifications."
+  ]
+}

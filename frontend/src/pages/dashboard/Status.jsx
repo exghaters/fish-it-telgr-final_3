@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Play,
@@ -70,7 +70,7 @@ export default function Status() {
   const [tg, setTg] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const [s, t] = await Promise.all([
         api.get("/automation/status"),
@@ -78,16 +78,16 @@ export default function Status() {
       ]);
       setStatus(s.data);
       setTg(t.data);
-    } catch (e) {
-      console.error("Gagal memuat status:", e);
+    } catch {
+      /* silent: background poll */
     }
-  };
+  }, []);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 2000);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
 
   const act = async (path, msg) => {
     setBusy(true);

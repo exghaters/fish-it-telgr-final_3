@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   BellRinging,
@@ -36,25 +36,25 @@ export default function Notifications() {
   const [unread, setUnread] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const r = await api.get("/automation/notifications", { params: { limit: 100 } });
       setList(r.data.notifications || []);
       setUnread(r.data.unread_count || 0);
-    } catch (e) { console.error("Gagal memuat notifikasi:", e); }
-  };
+    } catch { /* silent: background poll */ }
+  }, []);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
 
   const markRead = async (id) => {
     try {
       await api.post(`/automation/notifications/${id}/read`);
       await load();
-    } catch (e) { console.error("Gagal menandai dibaca:", e); }
+    } catch { /* silent */ }
   };
 
   const resumeAndMarkRead = async (id) => {

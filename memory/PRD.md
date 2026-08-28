@@ -61,3 +61,11 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Admin-driven password reset (user declined email/Resend): admin panel per-user Reset Password (key icon) -> POST /api/admin/users/{id}/reset-password (min 6, admin-only). Login shows "Lupa password? Hubungi admin".
 - Group START kickstart: on Start in group mode, engine immediately sends /open_mancing@<bot> to the group; VIP already sends /mancing immediately.
 - Verified: backend 130/130 pytest, frontend 100%.
+
+## Code Quality Pass — 2026-06 (safe-only)
+- Frontend: removed production `console.error` (5 dashboard pages) → silent background-poll catches.
+- Frontend: wrapped polling `load()` in `useCallback` (Status/Notifications/Activity/Admin) + fixed useEffect deps.
+- Frontend: memoized AuthProvider context value (`useMemo`/`useCallback`) in `lib/auth.jsx`.
+- Frontend: extracted inline Framer Motion prop objects to module constants in `Landing.jsx`.
+- SKIPPED (would introduce bugs): Python `is`→`==` — all instances are `is None`/`is not None` (correct PEP8). craco console.warn is intentional platform build messaging.
+- DEFERRED (risky, user chose "aman"): localStorage→cookie auth change; splitting `automation_engine.py` functions; splitting large components.

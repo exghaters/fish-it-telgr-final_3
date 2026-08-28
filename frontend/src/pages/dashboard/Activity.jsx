@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowsClockwise } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
@@ -43,18 +43,18 @@ export default function Activity() {
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollRef = useRef(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const r = await api.get("/automation/events", { params: { limit: 200 } });
       setEvents((r.data.events || []).reverse());
-    } catch (e) { console.error("Gagal memuat activity log:", e); }
-  };
+    } catch { /* silent: background poll */ }
+  }, []);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 2500);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {

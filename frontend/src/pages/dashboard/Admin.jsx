@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { UsersThree, ShieldCheck, ShieldSlash, Crown, Key } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -23,19 +23,19 @@ export default function Admin() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const [u, s] = await Promise.all([api.get("/admin/users"), api.get("/admin/stats")]);
       setUsers(u.data);
       setStats(s.data);
-    } catch (e) { console.error("Gagal memuat data admin:", e); }
-  };
+    } catch { /* silent: background poll */ }
+  }, []);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
 
   const update = async (id, patch, msg) => {
     try {

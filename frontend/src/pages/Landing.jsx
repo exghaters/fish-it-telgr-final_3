@@ -73,6 +73,24 @@ const tiers = [
   },
 ];
 
+const fadeUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.6 },
+};
+
+const fadeRight = {
+  initial: { opacity: 0, x: 20 },
+  animate: { opacity: 1, x: 0 },
+  transition: { duration: 0.7, delay: 0.15 },
+};
+
+const featureReveal = {
+  initial: { opacity: 0, y: 20 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true },
+};
+
 export default function Landing() {
   return (
     <div className="min-h-screen bg-[#05050A] text-slate-50">
@@ -106,12 +124,7 @@ export default function Landing() {
       {/* Hero */}
       <section className="relative overflow-hidden grain">
         <div className="max-w-7xl mx-auto px-6 pt-24 pb-32 grid lg:grid-cols-12 gap-12 items-center relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="lg:col-span-7"
-          >
+          <motion.div {...fadeUp} className="lg:col-span-7">
             <div className="inline-flex items-center gap-2 rounded-full border border-pink-500/30 bg-pink-500/10 px-4 py-1.5 mb-6">
               <span className="w-2 h-2 rounded-full bg-pink-500 dot-pulse" />
               <span className="text-xs uppercase tracking-widest text-pink-300">Sekarang Rilis Beta</span>
@@ -154,12 +167,7 @@ export default function Landing() {
             </div>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.7, delay: 0.15 }}
-            className="lg:col-span-5"
-          >
+          <motion.div {...fadeRight} className="lg:col-span-5">
             <div className="trace-border rounded-2xl p-6 relative">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
@@ -212,9 +220,7 @@ export default function Landing() {
           {features.map((f, i) => (
             <motion.div
               key={f.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
+              {...featureReveal}
               transition={{ delay: i * 0.05 }}
               className="p-6 rounded-lg border border-white/10 bg-[#0F0F16] hover:border-pink-500/40 hover:-translate-y-1 transition-transform"
             >

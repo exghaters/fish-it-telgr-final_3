@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import api from "./api";
 
 const AuthContext = createContext(null);
@@ -30,31 +30,36 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     localStorage.setItem("fishit_token", data.access_token);
     localStorage.setItem("fishit_user", JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
-  };
+  }, []);
 
-  const register = async (email, password) => {
+  const register = useCallback(async (email, password) => {
     const { data } = await api.post("/auth/register", { email, password });
     localStorage.setItem("fishit_token", data.access_token);
     localStorage.setItem("fishit_user", JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem("fishit_token");
     localStorage.removeItem("fishit_user");
     setUser(null);
     window.location.href = "/login";
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, loading, login, register, logout }),
+    [user, loading, login, register, logout]
+  );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

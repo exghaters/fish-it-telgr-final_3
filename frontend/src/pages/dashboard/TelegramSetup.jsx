@@ -23,7 +23,7 @@ export default function TelegramSetup() {
       setStatus(r.data);
       if (r.data.connected) setStep("done");
       else if (r.data.api_id_set) setStep("phone");
-    } catch (e) { console.error("Gagal memuat status Telegram:", e); }
+    } catch { /* silent */ }
   };
 
   useEffect(() => {

@@ -54,7 +54,7 @@ class TestConfigNewFields:
         assert "already_fishing_pattern" in cfg
         assert "extract_list_pattern" in cfg
         # default values
-        assert cfg["already_fishing_pattern"] == r"(sedang memancing|masih memancing|sedang aktif)"
+        assert cfg["already_fishing_pattern"] == r"(sedang memancing|masih memancing|sedang aktif|SEDANG MANCING)"
         assert cfg["extract_list_pattern"] == r"(Bisa di-extract|extract semua artefak|EXTRACT.*Inventory)"
 
     def test_default_patterns_functional(self, http, user_ctx):

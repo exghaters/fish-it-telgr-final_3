@@ -37,6 +37,8 @@ class UserTelegram:
         self.lock = asyncio.Lock()
         self.event_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
         self._handler_installed = False
+        self.allowed_chat_ids: set[int] = set()
+        self._chat_id_cache: dict[str, int] = {}
 
     async def connect(self):
         if self.client is None:
@@ -114,6 +116,8 @@ class UserTelegram:
 
         async def on_message(event):
             try:
+                if self.allowed_chat_ids and event.chat_id not in self.allowed_chat_ids:
+                    return
                 item = {
                     "type": "message",
                     "chat_id": event.chat_id,
@@ -134,11 +138,13 @@ class UserTelegram:
             except Exception as exc:
                 log.exception("handler error: %s", exc)
 
-        client.add_event_handler(on_message, events.NewMessage())
+        client.add_event_handler(on_message, events.NewMessage(incoming=True))
 
         # Also listen for edits so button/state changes on same message reach us.
         async def on_edited(event):
             try:
+                if self.allowed_chat_ids and event.chat_id not in self.allowed_chat_ids:
+                    return
                 item = {
                     "type": "edited",
                     "chat_id": event.chat_id,
@@ -158,8 +164,37 @@ class UserTelegram:
             except Exception as exc:
                 log.exception("edit handler error: %s", exc)
 
-        client.add_event_handler(on_edited, events.MessageEdited())
+        client.add_event_handler(on_edited, events.MessageEdited(incoming=True))
         self._handler_installed = True
+
+    async def resolve_chat_id(self, chat) -> Optional[int]:
+        """Resolve @username / id string to marked chat_id (cached)."""
+        key = str(chat or "").strip().lower()
+        if not key:
+            return None
+        if key in self._chat_id_cache:
+            return self._chat_id_cache[key]
+        await self.connect()
+        try:
+            raw = str(chat).strip()
+            target = int(raw) if raw.lstrip("-").isdigit() else raw
+            entity = await self.client.get_entity(target)
+            cid = await self.client.get_peer_id(entity)
+            self._chat_id_cache[key] = cid
+            return cid
+        except Exception as exc:
+            log.warning("resolve_chat_id %s failed: %s", chat, exc)
+            return None
+
+    async def set_allowed_chats(self, chats: list) -> dict:
+        """Whitelist chats for the event handlers. Returns {chat_id: name}."""
+        mapping: dict[int, str] = {}
+        for c in chats:
+            cid = await self.resolve_chat_id(c)
+            if cid is not None:
+                mapping[cid] = str(c).strip()
+        self.allowed_chat_ids = set(mapping.keys())
+        return mapping
 
     async def send_command(self, chat: str, text: str):
         await self.connect()

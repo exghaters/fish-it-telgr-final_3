@@ -105,6 +105,15 @@ class AutomationConfig(BaseModel):
     inventory_command: str = "/inventory"
     favorite_command_template: str = "/favorite {n}"
 
+    # Chat filter — engine ONLY reads messages from bot, group & these chats
+    extra_allowed_chats: str = "@fish_it_vip_bot, @fish_it_vip3_bot, @fish_it_vip4_bot, @fish_it_vip5_bot"
+
+    # Boost (optional): send /boost when trigger text appears
+    boost_enabled: bool = False
+    boost_command: str = "/boost"
+    boost_trigger_pattern: str = r"(PERAHU SIAP BERANGKAT|AUTO MANCING DIMULAI)"
+    boost_cooldown_seconds: int = 300
+
     # Cycle timing (seconds)
     group_wait_seconds: int = 60          # wait after Join
     group_fish_seconds: int = 180         # 3 minutes fishing
@@ -117,7 +126,7 @@ class AutomationConfig(BaseModel):
     session_done_pattern: str = r"(SESI MANCING SELESAI|mancing selesai|WAKTU HABIS)"
     pendaftaran_pattern: str = r"(PENDAFTARAN DIBUKA|Pendaftaran Berhasil)"
     gift_message_pattern: str = r"✨\s*(SECRET SHINY|SECRET|CELESTIAL|MYTHIC)\s*✨"
-    already_fishing_pattern: str = r"(sedang memancing|masih memancing|sedang aktif)"
+    already_fishing_pattern: str = r"(sedang memancing|masih memancing|sedang aktif|SEDANG MANCING)"
     extract_list_pattern: str = r"(Bisa di-extract|extract semua artefak|EXTRACT.*Inventory)"
     gift_rarity_pattern: str = r"(SECRET SHINY|SECRET|CELESTIAL|MYTHIC|Mythical)"
     rare_pattern: str = r"(legend|myth|epic|artefak)"

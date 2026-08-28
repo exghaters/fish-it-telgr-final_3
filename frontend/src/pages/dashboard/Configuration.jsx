@@ -304,6 +304,65 @@ export default function Configuration() {
         </div>
       </Section>
 
+      <Section title="Filter Chat & Boost">
+        <div className="grid md:grid-cols-2 gap-4">
+          <Field
+            label="Chat Tambahan yang Dibaca (pisahkan koma)"
+            hint="Engine HANYA membaca pesan dari Bot, Grup Target, dan daftar ini. Chat/grup lain diabaikan — Activity Log jadi bersih."
+          >
+            <Input
+              data-testid="input-extra-allowed-chats"
+              value={cfg.extra_allowed_chats || ""}
+              onChange={(e) => update("extra_allowed_chats", e.target.value)}
+              placeholder="@fish_it_vip_bot, @fish_it_vip3_bot"
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field label="Perintah Boost">
+            <Input
+              data-testid="input-boost-command"
+              value={cfg.boost_command || ""}
+              onChange={(e) => update("boost_command", e.target.value)}
+              placeholder="/boost"
+              className="bg-[#05050A] border-white/10 font-mono"
+            />
+          </Field>
+          <Field
+            label="Pattern Trigger Boost (Regex)"
+            hint='Boost dikirim saat teks ini muncul: "PERAHU SIAP BERANGKAT" (grup) / "AUTO MANCING DIMULAI!" (bot)'
+          >
+            <Input
+              data-testid="input-boost-trigger"
+              value={cfg.boost_trigger_pattern || ""}
+              onChange={(e) => update("boost_trigger_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field label="Cooldown Boost (detik)" hint="Durasi boost ±5 menit — tidak dikirim ulang selama cooldown">
+            <Input
+              type="number"
+              data-testid="input-boost-cooldown"
+              value={cfg.boost_cooldown_seconds ?? 300}
+              onChange={(e) => update("boost_cooldown_seconds", parseInt(e.target.value) || 300)}
+              className="bg-[#05050A] border-white/10 font-mono"
+            />
+          </Field>
+        </div>
+        <div className="flex items-center gap-3 mt-6">
+          <Switch
+            checked={!!cfg.boost_enabled}
+            onCheckedChange={(v) => update("boost_enabled", v)}
+            data-testid="switch-boost-enabled"
+          />
+          <div>
+            <div className="text-sm text-slate-200 font-medium">Auto /boost</div>
+            <div className="text-xs text-slate-500">
+              Bila ON, engine otomatis kirim perintah boost saat pattern trigger muncul.
+            </div>
+          </div>
+        </div>
+      </Section>
+
       <Section title="Auto-Start">
         <div className="flex items-center gap-3">
           <Switch

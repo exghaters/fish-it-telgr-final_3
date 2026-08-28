@@ -6,14 +6,19 @@ import requests
 from datetime import datetime, timezone
 from pymongo import MongoClient
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
+from dotenv import dotenv_values as _dv  # test-env resolution
+_fe = _dv("/app/frontend/.env")
+_bu = os.environ.get("REACT_APP_BACKEND_URL") or _fe.get("REACT_APP_BACKEND_URL")
+if not _bu:
+    raise RuntimeError("REACT_APP_BACKEND_URL missing from env and /app/frontend/.env")
+BASE_URL = _bu.rstrip("/")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "test_database")
 
 ADMIN_EMAIL = "admin@fishit.app"
 ADMIN_PASS = "Admin@Fishit2026"
-ELITE_EMAIL = "elite@fishit.app"
-ELITE_PASS = "Elite@Fishit2026"
+ELITE_EMAIL = "user@fishit.app"
+ELITE_PASS = "FishIt#2026"
 
 
 @pytest.fixture(scope="module")
@@ -119,6 +124,10 @@ def seeded_notif(s, elite_token):
     user_id = data["user"]["id"]
     client = MongoClient(MONGO_URL)
     db = client[DB_NAME]
+    # notifications are account-scoped since multi-account: key = "user_id:account_id"
+    acc = db.telegram_accounts.find_one({"user_id": user_id})
+    assert acc, "no telegram account for elite user"
+    user_id = f"{user_id}:{acc['id']}"
     notif = {
         "id": f"test-verify-{uuid.uuid4()}",
         "user_id": user_id,

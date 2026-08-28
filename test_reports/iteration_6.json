@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 6 full-surface test of Fish It Autopilot web app (Telegram engine intentionally untested). Backend: 29/29 pytest live-API tests pass (health, auth register/login/me + negative cases, automation config GET/PUT persistence incl. boost_* + extra_allowed_chats + join_button_text, per-user config isolation, mode validation, status/events/notifications, read-all, start 400-guard, start/stop, pause/resume, telegram status + validation, admin users/stats/RBAC/plan update). Frontend: admin login -> Status dashboard, all 7 nav pages (Status, Telegram, Konfigurasi, Activity Log, Notifikasi, Paket, Kelola User) render without crash, 'Filter Chat & Boost' section with all requested data-testids present, boost toggle + cooldown + extra chats + join button saved and persisted after reload, Telegram setup form renders, new-user UI registration works, admin nav hidden + /dashboard/admin guarded for non-admin, logout clears fishit_token, unauthenticated /dashboard redirects to /login. No console errors except the expected 400 from Start without config.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/automation/start", "issue": "Only validates bot/group username; does not verify a connected Telegram session. Returns 200 and the engine loop then throws 'API ID / API Hash belum di-set' repeatedly in backend logs. Suggest returning 400 with 'Hubungkan Telegram dulu' when telegram session/api creds are missing."},
+      {"endpoint": "startup logs", "issue": "passlib bcrypt version warning: \"module 'bcrypt' has no attribute '__about__'\" (harmless, but noisy; pin passlib/bcrypt compatible versions)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard / Status", "issues": ["'UPTIME' shows a bare yellow dash placeholder when automation is idle - reads as a broken bar; consider '-' text or 'Tidak aktif'.", "Large empty area below the 3 stat cards on 1920x1080; no footer/content fills the viewport."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter6_live_api.py", "/app/test_reports/pytest/iter6_results.xml"],
+  "action_items": [
+    "Optional: guard POST /api/automation/start on a connected Telegram session so users get a clear error instead of a silent failing engine loop.",
+    "Optional: split /app/backend/automation_engine.py (1112 lines) into smaller modules (client/session, message parsing, cycle orchestration).",
+    "Optional polish: Status page uptime placeholder and empty-state layout."
+  ],
+  "critical_code_review_comments": [
+    "automation_engine.stop() caught only Exception around asyncio.wait_for(self.task), so uvicorn's lifespan cancellation surfaced as 'Application shutdown failed. Exiting.' on every backend restart. FIXED by catching (Exception, asyncio.CancelledError); verified clean 'Application shutdown complete.' after restart.",
+    "automation_engine.py is 1112 lines - exceeds the 700-line guideline; should be modularized.",
+    "automation_routes.start uses `not cfg or not cfg.get('group_username') and not cfg.get('bot_username')` - precedence works but is hard to read; wrap the AND in parentheses.",
+    "PUT /api/automation/config accepts a full AutomationConfig body (client must send every field); a partial/PATCH model would be safer against client-side field drops.",
+    "All queries correctly project out _id; no ObjectId leakage found. Admin endpoints correctly enforce role and never expose password_hash."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter6_live_api.py", "/app/backend/automation_engine.py"],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Several throwaway users prefixed test_ / TEST_ created via /api/auth/register (test_iter6_*, TEST_iso_*, TEST_start_*, TEST_tg_*, TEST_nonadmin_*, TEST_plan_*, test_ui_*). Admin config left with boost_cooldown_seconds=555, boost_enabled=false, extra_allowed_chats = the 4 VIP bots.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@fishit.app / Admin@Fishit2026 (works, role=admin, plan=elite)",
+  "context_for_next_testing_agent": "Live API suite is /app/backend/tests/test_iter6_live_api.py (run with `cd /app/backend && python -m pytest tests/test_iter6_live_api.py`). Telegram MTProto login cannot be tested (no real api_id/api_hash) - send-code failure is expected. Frontend testids: login-email/login-password/login-submit, nav-status|telegram|config|activity|notifications|pricing|admin, config-page + input-extra-allowed-chats/input-boost-command/input-boost-trigger/input-boost-cooldown/switch-boost-enabled/input-join-button/save-config, telegram-page + input-api-id/input-api-hash/save-creds, sidebar-user-email/sidebar-logout. Token key: fishit_token.",
+  "rca_of_the_issue": "Backend restart failure RCA: uvicorn cancels the lifespan task on shutdown; automation_engine.shutdown() -> runner.stop() awaited asyncio.wait_for(self.task) whose CancelledError (a BaseException since Python 3.8) escaped the `except Exception` handler, aborting the shutdown context. Fixed by catching asyncio.CancelledError as well; verified with supervisorctl restart backend."
+}

@@ -14,8 +14,13 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import api from "@/lib/api";
+import { useAuth } from "@/lib/auth.jsx";
+
+const VIP_MULTI_PLANS = ["pro", "elite"];
 
 export default function Configuration() {
+  const { user } = useAuth();
+  const vipMulti = VIP_MULTI_PLANS.includes((user?.plan || "free").toLowerCase());
   const [cfg, setCfg] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -164,7 +169,7 @@ export default function Configuration() {
               className="bg-[#05050A] border-white/10 font-mono"
             />
           </Field>
-          <Field label="Perintah Favorite (gunakan {n} untuk posisi)">
+          <Field label="Perintah Favorite ({n} = nomor, bisa banyak)">
             <Input
               value={cfg.favorite_command_template}
               onChange={(e) => update("favorite_command_template", e.target.value)}
@@ -308,17 +313,22 @@ export default function Configuration() {
         <div className="grid md:grid-cols-2 gap-4">
           <Field
             label="Chat Tambahan yang Dibaca (pisahkan koma)"
-            hint="Engine HANYA membaca pesan dari Bot, Grup Target, dan daftar ini. Chat/grup lain diabaikan — Activity Log jadi bersih."
+            hint={
+              vipMulti
+                ? "Engine HANYA membaca pesan dari Bot, Grup Target, dan daftar ini. Chat/grup lain diabaikan — Activity Log jadi bersih."
+                : "Paket Starter dibatasi 1 bot/grup saja. Upgrade ke Pro/Elite untuk pakai banyak bot VIP di sini."
+            }
           >
             <Input
               data-testid="input-extra-allowed-chats"
-              value={cfg.extra_allowed_chats || ""}
+              value={vipMulti ? (cfg.extra_allowed_chats || "") : ""}
               onChange={(e) => update("extra_allowed_chats", e.target.value)}
-              placeholder="@fish_it_vip_bot, @fish_it_vip3_bot"
-              className="bg-[#05050A] border-white/10 font-mono text-xs"
+              disabled={!vipMulti}
+              placeholder={vipMulti ? "@fish_it_vip_bot, @fish_it_vip3_bot" : "Khusus Pro/Elite"}
+              className="bg-[#05050A] border-white/10 font-mono text-xs disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </Field>
-          <Field label="Perintah Boost">
+          <Field label="Perintah Boost (DM Bot)">
             <Input
               data-testid="input-boost-command"
               value={cfg.boost_command || ""}
@@ -328,13 +338,33 @@ export default function Configuration() {
             />
           </Field>
           <Field
-            label="Pattern Trigger Boost (Regex)"
-            hint='Boost dikirim saat teks ini muncul: "PERAHU SIAP BERANGKAT" (grup) / "AUTO MANCING DIMULAI!" (bot)'
+            label="Trigger Boost DM (Regex)"
+            hint='Kirim /boost ke bot saat teks ini muncul di DM bot: "AUTO MANCING DIMULAI!"'
           >
             <Input
               data-testid="input-boost-trigger"
               value={cfg.boost_trigger_pattern || ""}
               onChange={(e) => update("boost_trigger_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field label="Perintah Boost Grup">
+            <Input
+              data-testid="input-group-boost-command"
+              value={cfg.group_boost_command || ""}
+              onChange={(e) => update("group_boost_command", e.target.value)}
+              placeholder="/boost_grup"
+              className="bg-[#05050A] border-white/10 font-mono"
+            />
+          </Field>
+          <Field
+            label="Trigger Boost Grup (Regex)"
+            hint='Kirim /boost_grup ke grup saat teks ini muncul: "Boost Grup Berakhir!" / "PERAHU SIAP BERANGKAT"'
+          >
+            <Input
+              data-testid="input-group-boost-trigger"
+              value={cfg.group_boost_trigger_pattern || ""}
+              onChange={(e) => update("group_boost_trigger_pattern", e.target.value)}
               className="bg-[#05050A] border-white/10 font-mono text-xs"
             />
           </Field>
@@ -355,11 +385,101 @@ export default function Configuration() {
             data-testid="switch-boost-enabled"
           />
           <div>
-            <div className="text-sm text-slate-200 font-medium">Auto /boost</div>
+            <div className="text-sm text-slate-200 font-medium">Auto /boost & /boost_grup</div>
             <div className="text-xs text-slate-500">
-              Bila ON, engine otomatis kirim perintah boost saat pattern trigger muncul.
+              Bila ON, engine kirim boost otomatis saat pattern trigger muncul (opsional).
             </div>
           </div>
+        </div>
+      </Section>
+
+      <Section title="Proteksi Ikan Langka (sebelum Jual)">
+        <p className="text-xs text-slate-500 mb-4">
+          Sebelum <span className="text-white font-mono">/jual semua</span>, engine buka
+          <span className="text-white font-mono"> /inventory</span> dan memfavoritkan ikan langka
+          (secret / celestial / secret_shiny) atau ikan bernilai tinggi, lalu di-skip dari
+          penjualan. Dicek per halaman sampai halaman terakhir.
+        </p>
+        <div className="grid md:grid-cols-2 gap-4">
+          <Field
+            label="Pattern Rarity Dilindungi (Regex)"
+            hint="Ikan dengan rarity ini TIDAK akan dijual (difavoritkan dulu)."
+          >
+            <Input
+              data-testid="input-protect-rarity"
+              value={cfg.protect_rarity_pattern || ""}
+              onChange={(e) => update("protect_rarity_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field
+            label="Emoji Ringkasan Rarity (Regex)"
+            hint="Jika ini muncul di ringkasan /inventory (✨/🌟/☀️), engine scan & favorit ikan langka."
+          >
+            <Input
+              data-testid="input-rarity-summary"
+              value={cfg.rarity_summary_pattern || ""}
+              onChange={(e) => update("rarity_summary_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field label="Min Coins Dilindungi" hint="Ikan dengan coins ≥ nilai ini juga difavoritkan (mis. 1.000.000).">
+            <Input
+              type="number"
+              data-testid="input-protect-min-coins"
+              value={cfg.protect_min_coins ?? 1000000}
+              onChange={(e) => update("protect_min_coins", parseInt(e.target.value) || 0)}
+              className="bg-[#05050A] border-white/10 font-mono"
+            />
+          </Field>
+          <Field label="Max Halaman /inventory di-scan">
+            <Input
+              type="number"
+              data-testid="input-inventory-max-pages"
+              value={cfg.inventory_max_pages ?? 11}
+              onChange={(e) => update("inventory_max_pages", parseInt(e.target.value) || 11)}
+              className="bg-[#05050A] border-white/10 font-mono"
+            />
+          </Field>
+        </div>
+      </Section>
+
+      <Section title="Grup & Verifikasi">
+        <div className="grid md:grid-cols-2 gap-4">
+          <Field
+            label='Pattern "PENDAFTARAN DIBUKA" (grup)'
+            hint='Saat muncul di grup → langsung tekan "Daftar Mancing" (skip /open_mancing).'
+          >
+            <Input
+              data-testid="input-pendaftaran-open"
+              value={cfg.pendaftaran_open_pattern || ""}
+              onChange={(e) => update("pendaftaran_open_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field
+            label='Pattern "WAKTU HABIS!" (grup)'
+            hint="Saat muncul di grup → kirim /open_mancing@<bot> ke grup (bot disesuaikan dari 'Bot Fish It')."
+          >
+            <Input
+              data-testid="input-waktu-habis"
+              value={cfg.waktu_habis_pattern || ""}
+              onChange={(e) => update("waktu_habis_pattern", e.target.value)}
+              className="bg-[#05050A] border-white/10 font-mono text-xs"
+            />
+          </Field>
+          <Field
+            label="Keyword Resume Verifikasi"
+            hint="Setelah verifikasi manual selesai, ketik keyword ini di chat bot untuk lanjut otomatis."
+          >
+            <Input
+              data-testid="input-resume-keyword"
+              value={cfg.resume_keyword || ""}
+              onChange={(e) => update("resume_keyword", e.target.value)}
+              placeholder="dvk"
+              className="bg-[#05050A] border-white/10 font-mono"
+            />
+          </Field>
         </div>
       </Section>
 

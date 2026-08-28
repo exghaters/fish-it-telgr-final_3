@@ -41,7 +41,7 @@ export default function Notifications() {
       const r = await api.get("/automation/notifications", { params: { limit: 100 } });
       setList(r.data.notifications || []);
       setUnread(r.data.unread_count || 0);
-    } catch (_e) { /* ignore */ }
+    } catch (e) { console.error("Gagal memuat notifikasi:", e); }
   };
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function Notifications() {
     try {
       await api.post(`/automation/notifications/${id}/read`);
       await load();
-    } catch (_e) { /* ignore */ }
+    } catch (e) { console.error("Gagal menandai dibaca:", e); }
   };
 
   const resumeAndMarkRead = async (id) => {

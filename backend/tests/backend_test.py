@@ -1,13 +1,25 @@
 """Backend API tests for Fish It Automation."""
 import os
 import uuid
+from pathlib import Path
+
 import pytest
 import requests
+from dotenv import load_dotenv
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://botcraft-telegram-1.preview.emergentagent.com").rstrip("/")
+# Load creds from backend/.env instead of hardcoding secrets in source
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-ADMIN_EMAIL = "admin@fishit.app"
-ADMIN_PASSWORD = "Admin@Fishit2026"
+from dotenv import dotenv_values  # noqa: E402
+
+_frontend_env = dotenv_values("/app/frontend/.env")
+_base_url = os.environ.get("REACT_APP_BACKEND_URL") or _frontend_env.get("REACT_APP_BACKEND_URL")
+if not _base_url:
+    raise RuntimeError("REACT_APP_BACKEND_URL missing from env and /app/frontend/.env")
+BASE_URL = _base_url.rstrip("/")
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@fishit.app")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
 
 @pytest.fixture(scope="session")
@@ -87,7 +99,8 @@ class TestAutomation:
         cfg = r.json()
         assert cfg["mode"] == "vip_direct"
         assert cfg["bot_username"] == "@fish_it_bot"
-        assert cfg["user_id"] == user_ctx["id"]
+        # since multi-account, config key is "userId:accountId"
+        assert cfg["user_id"].split(":")[0] == user_ctx["id"]
 
     def test_update_config(self, http, user_ctx):
         r = http.get(f"{BASE_URL}/api/automation/config", headers=auth_h(user_ctx["token"]))
@@ -108,12 +121,13 @@ class TestAutomation:
         assert r.status_code == 200
         assert r.json()["status"] in ("idle", "stopped")
 
-    def test_start_stop(self, http, user_ctx):
-        # Ensure bot_username present
+    def test_start_requires_connected_telegram(self, http, user_ctx):
+        # Current behaviour: start is gated on a connected Telegram account
         r = http.post(f"{BASE_URL}/api/automation/start", headers=auth_h(user_ctx["token"]))
-        assert r.status_code == 200, r.text
-        assert r.json()["ok"] is True
+        assert r.status_code == 400, r.text
+        assert "Telegram" in r.json()["detail"]
 
+        # stop is always safe
         r2 = http.post(f"{BASE_URL}/api/automation/stop", headers=auth_h(user_ctx["token"]))
         assert r2.status_code == 200
 

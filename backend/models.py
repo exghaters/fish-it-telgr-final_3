@@ -53,6 +53,19 @@ class TokenResponse(BaseModel):
     user: UserPublic
 
 
+# ---------- Telegram Account (multi-account per user) ----------
+class TelegramAccount(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=new_id)
+    user_id: str
+    label: str = "Akun"
+    created_at: str = Field(default_factory=utcnow_iso)
+
+
+class AccountCreateInput(BaseModel):
+    label: str = Field(default="Akun", max_length=40)
+
+
 # ---------- Telegram Session ----------
 class TelegramSessionMeta(BaseModel):
     """Public metadata about a user's Telegram MTProto session (no secrets)."""
@@ -108,11 +121,29 @@ class AutomationConfig(BaseModel):
     # Chat filter — engine ONLY reads messages from bot, group & these chats
     extra_allowed_chats: str = "@fish_it_vip_bot, @fish_it_vip3_bot, @fish_it_vip4_bot, @fish_it_vip5_bot"
 
-    # Boost (optional): send /boost when trigger text appears
+    # Boost (optional, opt-in): send /boost in bot DM when trigger appears
     boost_enabled: bool = False
     boost_command: str = "/boost"
-    boost_trigger_pattern: str = r"(PERAHU SIAP BERANGKAT|AUTO MANCING DIMULAI)"
+    boost_trigger_pattern: str = r"(AUTO MANCING DIMULAI)"
     boost_cooldown_seconds: int = 300
+
+    # Group boost: send /boost_grup in group when its trigger appears
+    group_boost_command: str = "/boost_grup"
+    group_boost_trigger_pattern: str = r"(Boost Grup Berakhir|PERAHU SIAP BERANGKAT)"
+
+    # Group flow (event-driven) patterns
+    pendaftaran_open_pattern: str = r"(PENDAFTARAN DIBUKA)"
+    waktu_habis_pattern: str = r"(WAKTU HABIS)"
+
+    # Rare-fish protection: favorite before /jual semua so they are NOT sold.
+    # Triggered when inventory rarity summary shows ✨/🌟/☀️ (secret_shiny/celestial/secret).
+    protect_rarity_pattern: str = r"(secret[_ ]?shiny|celestial|secret)"
+    rarity_summary_pattern: str = r"(✨|🌟|☀️)"
+    protect_min_coins: int = 1000000
+    inventory_max_pages: int = 11
+
+    # Manual verification: type this keyword in the bot chat to resume automation
+    resume_keyword: str = "dvk"
 
     # Cycle timing (seconds)
     group_wait_seconds: int = 60          # wait after Join
@@ -130,7 +161,7 @@ class AutomationConfig(BaseModel):
     extract_list_pattern: str = r"(Bisa di-extract|extract semua artefak|EXTRACT.*Inventory)"
     gift_rarity_pattern: str = r"(SECRET SHINY|SECRET|CELESTIAL|MYTHIC|Mythical)"
     rare_pattern: str = r"(legend|myth|epic|artefak)"
-    inventory_full_pattern: str = r"(inventory.*(penuh|full)|slot terisi.*\d+/\d+|tas.*penuh)"
+    inventory_full_pattern: str = r"(Inventory Penuh|inventory.*(penuh|full)|\d+/\d+\s*ikan|tas.*penuh)"
     verification_pattern: str = r"(🔒.*[Vv]erifikasi|verifikasi diperlukan|verify)"
     verification_button_text: str = "Verifikasi"
     inventory_next_button_text: str = "Next"

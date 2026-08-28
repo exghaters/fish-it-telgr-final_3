@@ -39,6 +39,7 @@ class UserTelegram:
         self._handler_installed = False
         self.allowed_chat_ids: set[int] = set()
         self._chat_id_cache: dict[str, int] = {}
+        self._entity_cache: dict = {}
 
     async def connect(self):
         if self.client is None:
@@ -167,6 +168,48 @@ class UserTelegram:
         client.add_event_handler(on_edited, events.MessageEdited(incoming=True))
         self._handler_installed = True
 
+    async def _resolve_entity(self, chat):
+        """Resolve @username / id / title to an entity, with dialog-cache fallback.
+
+        Fixes 'The key is not registered in the system' (ResolveUsernameRequest) by
+        falling back to the account's cached dialogs when direct resolve fails.
+        """
+        key = str(chat or "").strip().lower()
+        if not key:
+            return None
+        if key in self._entity_cache:
+            return self._entity_cache[key]
+        await self.connect()
+        raw = str(chat).strip()
+        target = int(raw) if raw.lstrip("-").isdigit() else raw
+        ent = None
+        try:
+            ent = await self.client.get_entity(target)
+        except Exception:
+            ent = None
+        if ent is None:
+            want = raw.lstrip("@").lower()
+            want_id = int(raw) if raw.lstrip("-").isdigit() else None
+            try:
+                async for d in self.client.iter_dialogs():
+                    e = d.entity
+                    uname = (getattr(e, "username", "") or "").lower()
+                    if want and uname == want:
+                        ent = e
+                        break
+                    if want_id is not None:
+                        try:
+                            if await self.client.get_peer_id(e) == want_id:
+                                ent = e
+                                break
+                        except Exception:
+                            pass
+            except Exception as exc:
+                log.warning("dialog resolve %s failed: %s", chat, exc)
+        if ent is not None:
+            self._entity_cache[key] = ent
+        return ent
+
     async def resolve_chat_id(self, chat) -> Optional[int]:
         """Resolve @username / id string to marked chat_id (cached)."""
         key = str(chat or "").strip().lower()
@@ -174,17 +217,17 @@ class UserTelegram:
             return None
         if key in self._chat_id_cache:
             return self._chat_id_cache[key]
-        await self.connect()
-        try:
-            raw = str(chat).strip()
-            target = int(raw) if raw.lstrip("-").isdigit() else raw
-            entity = await self.client.get_entity(target)
-            cid = await self.client.get_peer_id(entity)
-            self._chat_id_cache[key] = cid
-            return cid
-        except Exception as exc:
-            log.warning("resolve_chat_id %s failed: %s", chat, exc)
+        ent = await self._resolve_entity(chat)
+        if ent is None:
+            log.warning("resolve_chat_id %s failed (not resolvable)", chat)
             return None
+        try:
+            cid = await self.client.get_peer_id(ent)
+        except Exception as exc:
+            log.warning("get_peer_id %s failed: %s", chat, exc)
+            return None
+        self._chat_id_cache[key] = cid
+        return cid
 
     async def set_allowed_chats(self, chats: list) -> dict:
         """Whitelist chats for the event handlers. Returns {chat_id: name}."""
@@ -199,15 +242,15 @@ class UserTelegram:
     async def send_command(self, chat: str, text: str):
         await self.connect()
         async with self.lock:
-            msg = await self.client.send_message(chat, text)
+            dest = await self._resolve_entity(chat)
+            msg = await self.client.send_message(dest or chat, text)
             return msg
 
     async def get_last_messages(self, chat: str, limit: int = 5):
         await self.connect()
-        try:
-            entity = await self.client.get_entity(chat)
-        except Exception as exc:
-            raise ValueError(f"Chat not found: {chat} ({exc})")
+        entity = await self._resolve_entity(chat)
+        if entity is None:
+            raise ValueError(f"Chat not found: {chat}")
         msgs = []
         async for m in self.client.iter_messages(entity, limit=limit):
             msgs.append({

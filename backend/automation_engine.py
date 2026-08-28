@@ -35,6 +35,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from telethon import events
 from telethon.tl.functions.messages import RequestWebViewRequest
 
 from deps import db
@@ -71,8 +72,11 @@ class AutomationRunner:
         self._last_mancing_at: Optional[datetime] = None
         self._session_active = False   # bot's fishing session is running
         self._last_boost_at: Optional[datetime] = None
+        self._last_group_boost_at: Optional[datetime] = None
         self._chat_names: dict[int, str] = {}
         self._filter_key: Optional[str] = None
+        self._resume_handler = None
+        self._group_kickstarted = False
 
     def is_running(self) -> bool:
         return self.task is not None and not self.task.done()
@@ -91,17 +95,20 @@ class AutomationRunner:
         self._last_mancing_at = None
         self._session_active = False
         self._filter_key = None
+        self._group_kickstarted = False
         await self._save_state()
         await self._event("start", "info", "Automation dimulai")
         self.task = asyncio.create_task(self._run_forever())
+        await self._install_resume_handler()
 
     async def stop(self):
         self.stop_flag.set()
         self.pause_flag.clear()
+        await self._remove_resume_handler()
         if self.task:
             try:
                 await asyncio.wait_for(self.task, timeout=5)
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 pass
         self.state.status = "stopped"
         await self._save_state()
@@ -175,28 +182,135 @@ class AutomationRunner:
         names = ", ".join(mapping.values()) or "(kosong)"
         await self._event("info", "info", f"Filter chat aktif — hanya baca: {names}")
 
-    # ---- Boost ----
+    # ---- Boost (DM + group) ----
     async def _maybe_boost(self, cfg: AutomationConfig, item: dict):
-        if not cfg.boost_enabled or not cfg.boost_trigger_pattern:
+        if not cfg.boost_enabled:
             return
         text = item.get("text") or ""
-        if not re.search(cfg.boost_trigger_pattern, text, re.IGNORECASE):
-            return
         now = _now()
         cooldown = max(30, int(cfg.boost_cooldown_seconds or 300))
-        if self._last_boost_at and (now - self._last_boost_at).total_seconds() < cooldown:
+        ut = None
+        # DM boost — e.g. "AUTO MANCING DIMULAI!" → /boost ke bot
+        if cfg.boost_trigger_pattern and re.search(cfg.boost_trigger_pattern, text, re.IGNORECASE):
+            if not (self._last_boost_at and (now - self._last_boost_at).total_seconds() < cooldown):
+                dest = cfg.bot_username or self._chat_names.get(item.get("chat_id"))
+                if dest:
+                    self._last_boost_at = now
+                    ut = ut or await self._get_client()
+                    try:
+                        await ut.send_command(dest, cfg.boost_command)
+                        await self._event("message-out", "info",
+                                          f"Sent {cfg.boost_command} → {dest} (boost)")
+                    except Exception as exc:
+                        await self._event("error", "warn", f"Boost gagal: {exc}")
+        # Group boost — "Boost Grup Berakhir!"/"PERAHU SIAP BERANGKAT" → /boost_grup ke grup
+        if cfg.group_boost_trigger_pattern and re.search(
+            cfg.group_boost_trigger_pattern, text, re.IGNORECASE
+        ):
+            if not (self._last_group_boost_at and
+                    (now - self._last_group_boost_at).total_seconds() < cooldown):
+                dest = cfg.group_username
+                if dest:
+                    self._last_group_boost_at = now
+                    ut = ut or await self._get_client()
+                    try:
+                        await ut.send_command(dest, cfg.group_boost_command)
+                        await self._event("message-out", "info",
+                                          f"Sent {cfg.group_boost_command} → {dest} (boost grup)")
+                    except Exception as exc:
+                        await self._event("error", "warn", f"Boost grup gagal: {exc}")
+
+    def _group_open_command(self, cfg: AutomationConfig) -> str:
+        """Build /open_mancing@<bot> using the configured Bot Fish It username."""
+        bot = (cfg.bot_username or "@fish_it_vip_bot").strip().lstrip("@")
+        return f"/open_mancing@{bot}"
+
+    # ---- Manual verification resume (type keyword in Telegram) ----
+    async def _install_resume_handler(self):
+        if self._resume_handler is not None:
             return
-        self._last_boost_at = now
-        dest = self._chat_names.get(item.get("chat_id")) or cfg.bot_username or cfg.group_username
-        if not dest:
-            return
-        ut = await self._get_client()
         try:
-            await ut.send_command(dest, cfg.boost_command)
-            await self._event("message-out", "info",
-                              f"Sent {cfg.boost_command} → {dest} (boost trigger)")
-        except Exception as exc:
-            await self._event("error", "warn", f"Boost gagal: {exc}")
+            ut = await self._get_client()
+        except Exception:
+            return
+        cfg = await self._load_config()
+        keyword = (cfg.resume_keyword or "dvk").strip().lower()
+        runner = self
+
+        async def _on_out(event):
+            try:
+                txt = (event.raw_text or "").strip().lower()
+                if keyword and txt == keyword and runner.pause_flag.is_set():
+                    await runner._event("resume", "info",
+                                        f"Keyword '{keyword}' terdeteksi di Telegram — resume")
+                    await runner.resume()
+            except Exception:
+                pass
+
+        try:
+            ut.client.add_event_handler(_on_out, events.NewMessage(outgoing=True))
+            self._resume_handler = _on_out
+        except Exception:
+            self._resume_handler = None
+
+    async def _remove_resume_handler(self):
+        if self._resume_handler is None:
+            return
+        try:
+            ut = await self._get_client()
+            ut.client.remove_event_handler(self._resume_handler)
+        except Exception:
+            pass
+        self._resume_handler = None
+
+    # ---- Multi-chat event wait (group mode pump) ----
+    async def _wait_for_any(self, cfg: AutomationConfig, rules: list,
+                            timeout: int) -> Optional[dict]:
+        ut = await self._get_client()
+        group_id = await ut.resolve_chat_id(cfg.group_username) if cfg.group_username else None
+        bot_id = await ut.resolve_chat_id(cfg.bot_username) if cfg.bot_username else None
+        compiled = [(r["name"], re.compile(r["pattern"], re.IGNORECASE), r.get("chat", "any"))
+                    for r in rules if r.get("pattern")]
+        deadline = _now() + timedelta(seconds=timeout)
+        while _now() < deadline and not self.stop_flag.is_set():
+            if self.pause_flag.is_set():
+                await self._wait_for_pause()
+                continue
+            try:
+                item = await asyncio.wait_for(ut.event_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                self.state.countdown_seconds = max(0, int((deadline - _now()).total_seconds()))
+                await self._save_state()
+                continue
+            text = (item.get("text") or "").strip()
+            chat_id = item.get("chat_id")
+            if text:
+                await self._event("message-in", "info",
+                                  f"[{self._chat_label(chat_id)}] {text[:280]}",
+                                  meta={"message_id": item.get("message_id"), "chat_id": chat_id})
+            await self._maybe_boost(cfg, item)
+            if (
+                cfg.verification_pattern
+                and isinstance(chat_id, int) and chat_id > 0
+                and re.search(cfg.verification_pattern, text, re.IGNORECASE)
+                and not self._in_verification
+                and not self.pause_flag.is_set()
+            ):
+                self._in_verification = True
+                try:
+                    await self._handle_verification(cfg.bot_username or "", item, cfg)
+                finally:
+                    self._in_verification = False
+                continue
+            for name, rx, chatsel in compiled:
+                if chatsel == "group" and group_id is not None and chat_id != group_id:
+                    continue
+                if chatsel == "bot" and bot_id is not None and chat_id != bot_id:
+                    continue
+                if rx.search(text):
+                    item["_matched"] = name
+                    return item
+        return None
 
     async def _drain_queue(self):
         ut = await self._get_client()
@@ -495,10 +609,22 @@ class AutomationRunner:
             await ut.send_command(target, cfg.open_command)
             await self._event("message-out", "info",
                               f"Sent {cfg.open_command}", meta={"chat": target})
+            # Quick check: inventory penuh → jual dulu, jangan paksa mancing
+            quick = await self._wait_for_message(
+                target, patterns=[cfg.inventory_full_pattern], timeout=8)
+            if quick:
+                await self._event("info", "warn",
+                                  "📦 Inventory penuh — extract & jual dulu sebelum lanjut")
+                self._last_mancing_at = None
+                self._session_active = False
+                await self._extract_and_sell(cfg)
+                self.state.fish_since_sell = 0
+                await self._save_state()
+                return
             self._last_mancing_at = _now()
             self._session_active = True
-            # 10s delay before session actually starts
-            await asyncio.sleep(10)
+            # short delay before session actually starts
+            await asyncio.sleep(5)
         else:
             elapsed = int((_now() - self._last_mancing_at).total_seconds())
             await self._event("info", "info",
@@ -577,80 +703,83 @@ class AutomationRunner:
         return None
 
     async def _cycle_group(self, cfg: AutomationConfig):
+        """Event-driven group mode.
+
+        - "PENDAFTARAN DIBUKA" (grup)  → langsung klik "Daftar Mancing" (skip /open_mancing)
+        - "WAKTU HABIS!"       (grup)  → kirim /open_mancing@<bot> ke grup
+        - "SESI MANCING SELESAI" (bot) → hitung 1 sesi (extract/jual diatur loop utama)
+        - "Inventory Penuh"      (bot) → extract & jual dulu
+        Boost grup (/boost_grup) & DM boost ditangani _maybe_boost.
+        """
         group = cfg.group_username
         bot = cfg.bot_username or "@fish_it_bot"
         if not group:
             await self.pause("Group username belum diset")
             return
         ut = await self._get_client()
+        open_cmd = self._group_open_command(cfg)
 
-        # Skip open flow if session already running in bot
-        if self._session_likely_running(cfg):
-            elapsed = int((_now() - self._last_mancing_at).total_seconds())
-            await self._event("info", "info",
-                              f"Group session running (~{elapsed}s) — tunggu selesai")
-        else:
-            self.state.status = "opening"
-            self.state.last_action_at = utcnow_iso()
-            await self._save_state()
-            await self._drain_queue()
-            open_cmd = cfg.group_open_command or cfg.open_command
-            await ut.send_command(group, open_cmd)
-            await self._event("message-out", "info", f"Sent {open_cmd} → {group}")
+        # Kickstart: on the first cycle after Start, langsung buka pendaftaran
+        # (kirim /open_mancing@<bot> ke grup) tanpa menunggu event.
+        if not self._group_kickstarted:
+            self._group_kickstarted = True
+            if not self._session_likely_running(cfg):
+                self.state.status = "opening"
+                await self._save_state()
+                await self._drain_queue()
+                try:
+                    await ut.send_command(group, open_cmd)
+                    await self._event("message-out", "info",
+                                      f"START → Sent {open_cmd} → {group}")
+                except Exception as exc:
+                    await self._event("error", "warn", f"Open mancing gagal: {exc}")
 
+        self.state.status = "waiting"
+        await self._save_state()
+
+        rules = [
+            {"name": "pendaftaran", "pattern": cfg.pendaftaran_open_pattern, "chat": "group"},
+            {"name": "waktu_habis", "pattern": cfg.waktu_habis_pattern, "chat": "group"},
+            {"name": "session_done", "pattern": cfg.session_done_pattern, "chat": "bot"},
+            {"name": "inventory_full", "pattern": cfg.inventory_full_pattern, "chat": "bot"},
+        ]
+        ev = await self._wait_for_any(cfg, rules, timeout=cfg.group_fish_seconds + 180)
+        if not ev or self.stop_flag.is_set():
+            return
+        name = ev.get("_matched")
+
+        if name == "pendaftaran":
             self.state.status = "joining"
             await self._save_state()
-            # STRICT: only match the actual open message, not "Pendaftaran Berhasil"
-            # from other members
-            pendaftaran = await self._wait_for_message(
-                chat=group,
-                patterns=[r"PENDAFTARAN DIBUKA|PERAHU SIAP"],
-                timeout=30,
-            )
-            join_method = None
-            if pendaftaran:
-                join_method = await self._join_group_button(
-                    cfg, group, pendaftaran["message_id"]
-                )
-            await asyncio.sleep(2)
-            # Only DM /start if join used a callback redirect (deep-link already
-            # starts the bot with the right param)
-            if join_method == "clicked" and cfg.dm_confirm_command:
+            method = await self._join_group_button(cfg, group, ev["message_id"])
+            if method == "clicked" and cfg.dm_confirm_command:
                 try:
                     await ut.send_command(bot, cfg.dm_confirm_command)
-                    await self._event("message-out", "info",
-                                      f"Sent {cfg.dm_confirm_command} → {bot}")
-                except Exception as exc:
-                    await self._event("error", "warn", f"DM confirm failed: {exc}")
-
-            await self._wait_for_message(
-                chat=bot,
-                patterns=[r"Pendaftaran Berhasil|sedang memancing"],
-                timeout=15,
-            )
+                except Exception:
+                    pass
             self._last_mancing_at = _now()
             self._session_active = True
-            await self._sleep_seconds(cfg.group_wait_seconds, "waiting")
-            if self.stop_flag.is_set():
-                return
+            await self._event("info", "info",
+                              "✅ 'Daftar Mancing' ditekan — menunggu sesi selesai")
 
-        self.state.status = "fishing"
-        await self._save_state()
-        result_msg = await self._wait_for_message(
-            chat=bot,
-            patterns=[cfg.session_done_pattern],
-            timeout=cfg.group_fish_seconds + 60,
-            extend_on_active=True,
-        )
-        if not result_msg:
-            await self._event("info", "warn",
-                              "Group session SELESAI tidak terdeteksi")
-            self._last_mancing_at = None
+        elif name == "waktu_habis":
+            self.state.status = "opening"
+            await self._save_state()
+            await self._drain_queue()
+            await ut.send_command(group, open_cmd)
+            await self._event("message-out", "info",
+                              f"WAKTU HABIS → Sent {open_cmd} → {group}")
+
+        elif name == "session_done":
             self._session_active = False
-            return
+            await self._process_session_result(bot, cfg, ev)
 
-        self._session_active = False
-        await self._process_session_result(bot, cfg, result_msg)
+        elif name == "inventory_full":
+            await self._event("info", "warn",
+                              "📦 Inventory penuh — extract & jual dulu")
+            await self._extract_and_sell(cfg)
+            self.state.fish_since_sell = 0
+            await self._save_state()
 
     async def _process_session_result(self, chat: str, cfg: AutomationConfig, result_msg: dict):
         text = result_msg.get("text", "") or ""
@@ -696,6 +825,116 @@ class AutomationRunner:
                         (fish_name or text[:300]),
                     )
 
+    # ---- Rare-fish protection (favorite before /jual semua) ----
+    def _find_fish_to_favorite(self, text: str, cfg: AutomationConfig) -> list[int]:
+        """Return inventory positions to favorite: rare rarity OR coins >= min."""
+        rare_rx = re.compile(cfg.protect_rarity_pattern, re.IGNORECASE)
+        coins_rx = re.compile(r"([\d.,]+)\s*coins", re.IGNORECASE)
+        min_coins = int(cfg.protect_min_coins or 0)
+        lines = text.splitlines()
+        blocks: list[tuple[int, str]] = []
+        cur_num: Optional[int] = None
+        cur: list[str] = []
+        for line in lines:
+            m = re.match(r"\s*(\d+)[\.\)]\s+", line)
+            if m:
+                if cur_num is not None:
+                    blocks.append((cur_num, " ".join(cur)))
+                cur_num = int(m.group(1))
+                cur = [line]
+            elif cur_num is not None:
+                cur.append(line)
+        if cur_num is not None:
+            blocks.append((cur_num, " ".join(cur)))
+        result: list[int] = []
+        for num, btext in blocks:
+            is_rare = bool(rare_rx.search(btext))
+            coins = 0
+            cm = coins_rx.search(btext)
+            if cm:
+                digits = re.sub(r"[^\d]", "", cm.group(1))
+                coins = int(digits) if digits else 0
+            if is_rare or (min_coins and coins >= min_coins):
+                result.append(num)
+        return sorted(set(result))
+
+    async def _protect_rare_fish(self, cfg: AutomationConfig, chat: str) -> int:
+        """Do /inventory, scan pages, favorite rare/valuable fish so they aren't sold."""
+        ut = await self._get_client()
+        self.state.status = "inventory"
+        await self._save_state()
+        await self._drain_queue()
+        await ut.send_command(chat, cfg.inventory_command)
+        await self._event("message-out", "info",
+                          f"Sent {cfg.inventory_command} (cek ikan langka sebelum jual)")
+
+        summary_rx = (re.compile(cfg.rarity_summary_pattern, re.IGNORECASE)
+                      if cfg.rarity_summary_pattern else None)
+        rare_rx = re.compile(cfg.protect_rarity_pattern, re.IGNORECASE)
+        inv_pat = r"Halaman:?\s*\d+|Slot terisi|Total (Nilai )?Inventory|Rarity:|Inventory\s+\w+"
+        positions: list[int] = []
+        seen: set[int] = set()
+        max_pages = int(cfg.inventory_max_pages or 11)
+        first = True
+        for _ in range(max_pages):
+            if self.stop_flag.is_set():
+                break
+            inv_msg = await self._wait_for_message(chat, patterns=[inv_pat], timeout=15)
+            if not inv_msg:
+                break
+            text = inv_msg.get("text", "") or ""
+            pm = re.search(r"Halaman:?\s*(\d+)\s*/\s*(\d+)", text)
+            cur = int(pm.group(1)) if pm else None
+            total = int(pm.group(2)) if pm else max_pages
+            if first:
+                first = False
+                has_rare = (bool(summary_rx.search(text)) if summary_rx else True) \
+                    or bool(rare_rx.search(text))
+                if summary_rx and not has_rare and int(cfg.protect_min_coins or 0) <= 0:
+                    await self._event("info", "info",
+                                      "Tidak ada ikan langka (✨/🌟/☀️) — lanjut jual")
+                    return 0
+            if cur in seen:
+                break
+            if cur:
+                seen.add(cur)
+            # Kumpulkan dulu posisi ikan langka di halaman ini (jangan kirim /favorite dulu)
+            found = self._find_fish_to_favorite(text, cfg)
+            if found:
+                positions.extend(found)
+                await self._event("info", "info",
+                                  f"Ikan langka/berharga di halaman {cur or '?'}: "
+                                  + ", ".join("#" + str(n) for n in found))
+            if cur and total and cur >= total:
+                break
+            clicked = await self._click_button_in_message(
+                chat, inv_msg["message_id"], cfg.inventory_next_button_text)
+            if not clicked:
+                break
+            await asyncio.sleep(1.5)
+
+        positions = sorted(set(positions))
+        if not positions:
+            return 0
+        # Setelah SEMUA halaman discan, kirim /favorite dengan SEMUA nomor sekaligus,
+        # mis "/favorite 5 56 110" (di-chunk 20 nomor per perintah biar aman).
+        chunk = 20
+        for i in range(0, len(positions), chunk):
+            group = positions[i:i + chunk]
+            cmd = cfg.favorite_command_template.replace(
+                "{n}", " ".join(str(n) for n in group))
+            await ut.send_command(chat, cmd)
+            await self._event("favorite", "success",
+                              f"⭐ Sent {cmd} ({len(group)} ikan langka)")
+            await asyncio.sleep(1.5)
+        await self._event("info", "success",
+                          f"Proteksi selesai — {len(positions)} ikan langka difavoritkan "
+                          "sebelum /jual semua")
+        await self._notify("gift", "Ikan langka dilindungi",
+                           f"{len(positions)} ikan difavoritkan: "
+                           + ", ".join("#" + str(n) for n in positions[:30]))
+        return len(positions)
+
     # ---- Extract & Sell ----
     async def _extract_and_sell(self, cfg: AutomationConfig):
         chat = cfg.bot_username or cfg.group_username
@@ -708,11 +947,13 @@ class AutomationRunner:
         if not session_clear or self.stop_flag.is_set():
             return
 
-        # If gift detected → favorite first
-        if self._session_gift_detected:
-            await self._inventory_favorite(cfg, chat, self._session_gift_names)
+        # STEP 1: proteksi ikan langka DULU — /inventory lalu /favorite semua nomor sekaligus
+        try:
+            await self._protect_rare_fish(cfg, chat)
+        except Exception as exc:
+            await self._event("error", "warn", f"Proteksi ikan langka gagal: {exc}")
 
-        # --- Extract flow (retry once if bot says still fishing) ---
+        # --- STEP 2: Extract flow (retry once if bot says still fishing) ---
         self.state.status = "extracting"
         await self._save_state()
         for attempt in range(2):
@@ -810,14 +1051,22 @@ class AutomationRunner:
             await self._event("extract", "success", "Extract berhasil")
             break
 
-        # --- Sell flow with wait-on-mancing (NO immediate retry) ---
-        await self._do_sell(cfg, chat)
+        # --- STEP 3: Sell flow — /jual semua (proteksi sudah di STEP 1) ---
+        await self._do_sell(cfg, chat, protected=True)
         self.state.fish_since_sell = 0
         await self._save_state()
 
     async def _do_sell(self, cfg: AutomationConfig, chat: str,
-                       retry_after_favorite: bool = False, mancing_retry: int = 0):
+                       retry_after_favorite: bool = False, mancing_retry: int = 0,
+                       protected: bool = False):
         ut = await self._get_client()
+        # ALWAYS /inventory & protect rare/valuable fish BEFORE /jual semua
+        if not protected and not retry_after_favorite:
+            try:
+                await self._protect_rare_fish(cfg, chat)
+            except Exception as exc:
+                await self._event("error", "warn", f"Proteksi ikan langka gagal: {exc}")
+            protected = True
         self.state.status = "selling"
         await self._save_state()
         await self._drain_queue()
@@ -855,7 +1104,8 @@ class AutomationRunner:
             self._session_active = False
             if done:
                 await self._process_session_result(chat, cfg, done)
-            await self._do_sell(cfg, chat, retry_after_favorite, mancing_retry + 1)
+            await self._do_sell(cfg, chat, retry_after_favorite, mancing_retry + 1,
+                                protected=protected)
             return
 
         if not is_confirm:
@@ -968,6 +1218,23 @@ class AutomationRunner:
         await self._save_state()
         await self._event("verification", "warn", "🔒 Verifikasi Diperlukan terdeteksi")
 
+        # Plan gating: only Pro/Elite get best-effort auto-verify; lower plans = manual only
+        try:
+            from deps import plan_limits
+            uid = self.user_id.split(":", 1)[0]
+            udoc = await db.users.find_one({"id": uid}, {"_id": 0, "plan": 1})
+            auto_ok = plan_limits((udoc or {}).get("plan", "free"))["auto_verify"]
+        except Exception:
+            auto_ok = False  # fail-safe: on error require manual verify
+        if not auto_ok:
+            await self._notify(
+                "verification", "🔒 Verifikasi Manual (paket Starter)",
+                f"Paket kamu memakai verifikasi manual. Selesaikan verifikasi di Telegram, "
+                f"lalu ketik '{cfg.resume_keyword}' di chat bot (atau Resume di dashboard).")
+            await self.pause(
+                f"Verifikasi manual — ketik '{cfg.resume_keyword}' di bot / Resume")
+            return
+
         ut = await self._get_client()
         url: Optional[str] = None
         webview_invoked = False
@@ -1063,17 +1330,19 @@ class AutomationRunner:
 
         body = (
             "Automation sudah mencoba pencet tombol verifikasi otomatis, tapi belum "
-            "berhasil. Buka Mini App URL di Telegram Anda, selesaikan Cloudflare "
-            "(kadang ada centang 'I'm human'), lalu klik Resume di dashboard."
+            "berhasil. Buka Mini App di Telegram, selesaikan Cloudflare, lalu ketik "
+            f"'{cfg.resume_keyword}' di chat bot (atau klik Resume di dashboard) untuk lanjut."
         )
         if not url:
             body = (
-                f"Buka chat {chat} di Telegram, klik tombol "
-                f"'{cfg.verification_button_text}' manual, selesaikan, lalu Resume."
+                f"Buka chat {chat} di Telegram, klik '{cfg.verification_button_text}' "
+                f"manual, selesaikan, lalu ketik '{cfg.resume_keyword}' di chat bot "
+                "(atau Resume di dashboard)."
             )
         await self._notify("verification", "🔒 Verifikasi Diperlukan", body,
                            action_url=url)
-        await self.pause("Verifikasi butuh manual — buka Mini App lalu Resume")
+        await self.pause(
+            f"Verifikasi manual — selesaikan lalu ketik '{cfg.resume_keyword}' di bot / Resume")
 
 
 class AutomationEngine:

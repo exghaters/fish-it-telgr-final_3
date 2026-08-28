@@ -79,7 +79,7 @@ export default function Status() {
       setStatus(s.data);
       setTg(t.data);
     } catch (e) {
-      // ignore
+      console.error("Gagal memuat status:", e);
     }
   };
 

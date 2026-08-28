@@ -1,11 +1,17 @@
 """Iter5 tests: chat filter + boost + anti-spam plumbing verification."""
 import os
 import re
+import uuid
 import sys
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://botcraft-telegram-1.preview.emergentagent.com").rstrip("/")
+from dotenv import dotenv_values as _dv  # test-env resolution
+_fe = _dv("/app/frontend/.env")
+_bu = os.environ.get("REACT_APP_BACKEND_URL") or _fe.get("REACT_APP_BACKEND_URL")
+if not _bu:
+    raise RuntimeError("REACT_APP_BACKEND_URL missing from env and /app/frontend/.env")
+BASE_URL = _bu.rstrip("/")
 
 sys.path.insert(0, "/app/backend")
 
@@ -15,7 +21,7 @@ class TestConfigNewFields:
     @pytest.fixture(scope="class")
     def token(self):
         # Register a fresh test user so we don't touch elite config
-        email = "TEST_iter5_boost@fishit.app"
+        email = f"TEST_iter5_boost_{uuid.uuid4().hex[:8]}@fishit.app"
         pwd = "TestPass@2026"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": pwd})
         r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": pwd})
@@ -36,8 +42,8 @@ class TestConfigNewFields:
         assert cfg["boost_enabled"] is False
         assert cfg["boost_command"] == "/boost"
         assert cfg["boost_cooldown_seconds"] == 300
-        assert "PERAHU SIAP BERANGKAT" in cfg["boost_trigger_pattern"]
         assert "AUTO MANCING DIMULAI" in cfg["boost_trigger_pattern"]
+        assert "PERAHU SIAP BERANGKAT" in cfg["group_boost_trigger_pattern"]
 
     def test_put_persists_new_fields(self, token):
         headers = {"Authorization": f"Bearer {token}"}
@@ -53,7 +59,9 @@ class TestConfigNewFields:
         assert r.status_code == 200, r.text
         # Verify persistence via GET
         got = requests.get(f"{BASE_URL}/api/automation/config", headers=headers).json()
-        assert got["extra_allowed_chats"] == "@custom_bot, @another_chat"
+        # iter10: extra_allowed_chats is plan-gated (Starter/free forced to ""),
+        # this fixture user is a fresh free-plan account.
+        assert got["extra_allowed_chats"] == ""
         assert got["boost_enabled"] is True
         assert got["boost_command"] == "/superboost"
         assert got["boost_trigger_pattern"] == "(GO NOW|LAUNCH)"
@@ -119,7 +127,9 @@ class TestEnginePlumbing:
         import inspect
         from automation_engine import AutomationRunner
         src = inspect.getsource(AutomationRunner._cycle_group)
-        assert "PENDAFTARAN DIBUKA|PERAHU SIAP" in src
+        # Event-driven group loop: patterns now come from config
+        assert "pendaftaran_open_pattern" in src
+        assert "waktu_habis_pattern" in src
 
 
 class TestTelegramManagerPlumbing:

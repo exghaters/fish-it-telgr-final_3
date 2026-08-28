@@ -52,6 +52,8 @@ async def ensure_indexes():
     await db.telegram_sessions.create_index("user_id", unique=True)
     await db.events.create_index([("user_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.telegram_accounts.create_index([("user_id", 1), ("created_at", 1)])
+    await db.telegram_accounts.create_index("id", unique=True)
 
 
 @asynccontextmanager

@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 8 testing of Fish It multi-account: backend account CRUD/limit/isolation, plan-based log retention, frontend account switcher + regression, plus code review of telegram_manager resolver and auto-verify gating. Backend: 13/13 new tests pass; 36/36 prior regression tests (iter6+iter7) pass. Frontend: login, switcher render, add-account, at-limit disabled state, account switch, per-account config isolation/persistence, all desktop nav pages, mobile drawer all work. Only cosmetic/loading-race issues found. No functional bugs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/telegram/accounts", "issue": "to_list(10) hard cap on accounts query — fine for current max 3, but will silently truncate if plan limits grow."},
+      {"endpoint": "Depends(get_account_key)", "issue": "Unknown/foreign X-Account-Id silently falls back to the user's default account instead of 400/404. Verified no cross-user leak (admin sending another user's account id gets own default), but silent fallback can mask frontend bugs."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DashboardLayout account switcher", "issue": "On first paint (before /telegram/accounts resolves) the switcher shows misleading defaults: empty dropdown, counter '0/1' and button label '+ Tambah akun (Starter)' for an Elite user. Consider a loading/skeleton state or defaulting from user.plan.", "selector": "[data-testid=\"account-switcher-box\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "First login (fresh localStorage)", "issue": "The initial dashboard API calls (/automation/status, /automation/notifications, /automation/config) fire before 'fishit_account' is set, so they are sent without X-Account-Id and are served by backend default-account fallback. Works today (default = first account) but the first render can be scoped to a different account than the one the user last selected in another browser/session.", "affected_selectors": ["[data-testid=\"account-switcher\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_multiaccount.py",
+    "/app/test_reports/pytest/iter8.xml",
+    "/app/backend/tests/cleanup_iter8.py"
+  ],
+  "action_items": [
+    "Optional: add loading state to account switcher so Elite users don't briefly see '0/1 / Starter'.",
+    "Optional: set 'fishit_account' (or defer initial data fetches) before first dashboard API calls so X-Account-Id is always present.",
+    "Optional: return 404/400 for an X-Account-Id not owned by the caller instead of silent default fallback."
+  ],
+  "critical_code_review_comments": [
+    "telegram_manager._resolve_entity() verified: caches by lowered key, tries get_entity(int|username) then falls back to iter_dialogs() matching username/id — correctly addresses 'The key is not registered in the system'. resolve_chat_id(), send_command() (send to resolved entity, falls back to raw chat) and get_last_messages() all route through it. Cannot be validated live (no real api_id/api_hash).",
+    "automation_engine._handle_verification (line ~1204): plan gating reads user plan from the akey prefix (user_id:account_id) and for free/basic notifies + pauses with resume_keyword; note the except branch defaults auto_ok=True, so a transient Mongo error grants auto-verify to Starter plans — consider defaulting to False.",
+    "All /api/automation/* and /api/telegram session endpoints consistently use akey (user_id:account_id); DELETE /accounts/{id} also purges configs/state/events/notifications and stops the runner — good cleanup."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter8_multiaccount.py", "/app/backend/tests/cleanup_iter8.py"],
+  "success_rate": {"backend": "100% (13/13 new, 36/36 regression)", "frontend": "100% of tested flows (1 cosmetic loading-flash issue)"},
+  "seed_data_creation": "Temporary Telegram accounts (TEST_*/Akun 2/Akun 3) created for limit + isolation tests; all deleted afterwards (admin and user each back to 1 'Akun 1'). Admin default-account bot_username temporarily set to @qa_bot_switch_test then reverted to @fish_it_bot. user@fishit.app plan temporarily cycled pro->free->elite via admin API and restored to elite.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@fishit.app / Admin@Fishit2026 (elite, admin); user@fishit.app / FishIt#2026 (elite). Login response key is 'access_token' (not 'token').",
+  "context_for_next_testing_agent": "Verified: GET /telegram/accounts auto-creates default + returns limit/plan/plan_label; POST 4th account -> 403 with Indonesian plan-limit detail; DELETE works, 404 for unknown, 400 'Minimal harus ada 1 akun' for last account; config/status/events isolated per X-Account-Id (state user_id == 'uid:accountId'); /automation/events log_days = 90 elite, 30 pro, 7 free (validated by cycling plan via admin PUT and reverting). Frontend switcher is a native <select>; switching/adding triggers window.location.reload() so add waits of ~4s are needed. Live Telegram MTProto still untestable (no api_id/api_hash) — resolver fix and auto-verify gating remain code-review only. Reusable regression suites: tests/test_iter6_live_api.py, tests/test_iter7_config_persist.py, tests/test_iter8_multiaccount.py (run with -n0 to avoid xdist races on account limits).",
+  "rca_of_the_issue": "N/A — no functional defects reproduced. The two minor observations stem from DashboardLayout initializing accInfo to {limit:1, plan_label:'Starter'} and issuing data fetches before the /telegram/accounts response sets localStorage 'fishit_account'."
+}

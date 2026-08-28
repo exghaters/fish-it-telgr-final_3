@@ -47,7 +47,7 @@ export default function Activity() {
     try {
       const r = await api.get("/automation/events", { params: { limit: 200 } });
       setEvents((r.data.events || []).reverse());
-    } catch (_e) { /* ignore */ }
+    } catch (e) { console.error("Gagal memuat activity log:", e); }
   };
 
   useEffect(() => {

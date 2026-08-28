@@ -10,9 +10,12 @@ import {
   Ticket,
   UsersThree,
   SignOut,
+  List,
+  X,
 } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth.jsx";
 import api from "@/lib/api";
+import { toast } from "sonner";
 
 const NAV = [
   { to: "/dashboard", label: "Status", icon: Gauge, testid: "nav-status" },
@@ -23,10 +26,61 @@ const NAV = [
   { to: "/dashboard/pricing", label: "Paket", icon: Ticket, testid: "nav-pricing" },
 ];
 
+const PLAN_UI = {
+  free: { limit: 1, plan_label: "Starter" },
+  basic: { limit: 1, plan_label: "Starter" },
+  pro: { limit: 1, plan_label: "Pro" },
+  elite: { limit: 3, plan_label: "Elite" },
+};
+
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
   const [unread, setUnread] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [accounts, setAccounts] = useState([]);
+  const [accInfo, setAccInfo] = useState(
+    () => PLAN_UI[(user?.plan || "free").toLowerCase()] || PLAN_UI.free
+  );
+  const [activeAcc, setActiveAcc] = useState(localStorage.getItem("fishit_account") || "");
   const location = useLocation();
+
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    api
+      .get("/telegram/accounts")
+      .then((r) => {
+        const list = r.data.accounts || [];
+        setAccounts(list);
+        setAccInfo({ limit: r.data.limit, plan_label: r.data.plan_label });
+        let sel = localStorage.getItem("fishit_account");
+        if (!sel || !list.find((a) => a.id === sel)) {
+          sel = list[0]?.id || "";
+          if (sel) localStorage.setItem("fishit_account", sel);
+        }
+        setActiveAcc(sel);
+      })
+      .catch(() => {});
+  }, []);
+
+  const switchAcc = (id) => {
+    if (!id || id === activeAcc) return;
+    localStorage.setItem("fishit_account", id);
+    window.location.reload();
+  };
+
+  const addAcc = async () => {
+    try {
+      const r = await api.post("/telegram/accounts", { label: `Akun ${accounts.length + 1}` });
+      localStorage.setItem("fishit_account", r.data.id);
+      toast.success("Akun Telegram baru dibuat");
+      window.location.reload();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Tidak bisa menambah akun");
+    }
+  };
 
   useEffect(() => {
     const load = () => {
@@ -42,8 +96,39 @@ export default function DashboardLayout() {
 
   return (
     <div className="min-h-screen bg-[#05050A] text-slate-100 flex">
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 inset-x-0 z-[60] h-14 bg-[#08080F] border-b border-white/5 flex items-center justify-between px-4">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-yellow-500 flex items-center justify-center">
+            <Fish size={14} weight="fill" className="text-black" />
+          </div>
+          <span className="font-heading font-bold text-sm tracking-tight">FISH IT</span>
+        </div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          data-testid="mobile-menu-toggle"
+          className="p-2 rounded-md text-slate-300 hover:bg-white/5 transition-colors"
+          aria-label="Menu"
+        >
+          {open ? <X size={22} /> : <List size={22} />}
+        </button>
+      </div>
+
+      {/* Overlay (mobile) */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          data-testid="mobile-overlay"
+          className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 shrink-0 border-r border-white/5 bg-[#08080F] flex flex-col">
+      <aside
+        className={`w-64 shrink-0 border-r border-white/5 bg-[#08080F] flex flex-col fixed md:static inset-y-0 left-0 z-50 transform transition-transform duration-300 md:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="p-6 border-b border-white/5">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-yellow-500 flex items-center justify-center">
@@ -54,6 +139,37 @@ export default function DashboardLayout() {
               <div className="text-[10px] uppercase tracking-widest text-slate-500">Autopilot</div>
             </div>
           </div>
+        </div>
+        {/* Account switcher (multi-account per plan) */}
+        <div className="px-3 py-3 border-b border-white/5" data-testid="account-switcher-box">
+          <div className="text-[10px] uppercase tracking-widest text-slate-600 mb-1.5 flex items-center justify-between">
+            <span>Akun Telegram</span>
+            <span className="text-slate-500 normal-case tracking-normal font-mono">
+              {accounts.length}/{accInfo.limit}
+            </span>
+          </div>
+          <select
+            value={activeAcc}
+            onChange={(e) => switchAcc(e.target.value)}
+            data-testid="account-switcher"
+            className="w-full bg-[#05050A] border border-white/10 rounded-md text-sm px-2 py-2 text-slate-200 focus:border-pink-500 outline-none"
+          >
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+                {a.connected ? " · ✓" : " · —"}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={addAcc}
+            disabled={accounts.length >= accInfo.limit}
+            data-testid="account-add"
+            className="mt-2 w-full text-xs px-2 py-1.5 rounded-md border border-pink-500/30 text-pink-400 hover:bg-pink-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title={accounts.length >= accInfo.limit ? `Paket ${accInfo.plan_label} maksimal ${accInfo.limit} akun` : ""}
+          >
+            + Tambah akun ({accInfo.plan_label})
+          </button>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {NAV.map((n) => (
@@ -125,8 +241,8 @@ export default function DashboardLayout() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 min-w-0 overflow-y-auto">
-        <div className="p-8 max-w-6xl">
+      <main className="flex-1 min-w-0 overflow-y-auto pt-14 md:pt-0">
+        <div className="p-5 md:p-8 max-w-6xl">
           <Outlet />
         </div>
       </main>

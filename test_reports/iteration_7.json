@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 7: (1) Backend regression via pytest (7/7 pass): admin login, /api/auth/me, GET/PUT /api/automation/config persistence (boost_enabled toggle + protect_min_coins change persisted after reload, then restored), auth-required check, notifications & status endpoints. (2) Mobile (390x844) sidebar drawer live test: sidebar off-canvas by default (x=-256), content full width, hamburger visible, drawer slides in with all 6 nav links + admin link, overlay click closes, nav link navigates AND auto-closes drawer. One defect: the hamburger/X button is NOT clickable while the drawer is open because the overlay (z-40) intercepts pointer events over the fixed top bar (also z-40). (3) Desktop (1920x900) regression: sidebar always visible, no hamburger, all 7 nav pages open, Configuration renders 'Filter Chat & Boost', 'Proteksi Ikan Langka', 'Grup & Verifikasi', Simpan works, zero console/error elements. (4) Code review of extract/sell ordering: order is CORRECT.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "automation_engine._protect_rare_fish", "issue": "Early-return when rarity_summary_pattern is absent on page 1 returns 0 BEFORE scanning any page for coins >= protect_min_coins, so high-value non-rare fish are never protected in that case."},
+      {"endpoint": "automation_engine._inventory_favorite (legacy gift path)", "issue": "Still sends /favorite one number per command (line ~1163) instead of the grouped '/favorite 5 56 110' format used by _protect_rare_fish; inconsistent and slower."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DashboardLayout mobile top bar", "issue": "When the drawer is open, the X/hamburger toggle cannot be clicked: overlay div (md:hidden fixed inset-0 z-40) is rendered after the top bar (also z-40) and intercepts pointer events (Playwright: 'mobile-overlay intercepts pointer events', click timeout). User can only close via overlay tap or nav link. Fix: give top bar z-50 (and overlay z-30/z-40 below it), or render overlay before top bar with lower z-index.", "selector": "[data-testid=\"mobile-menu-toggle\"]", "priority": "MEDIUM-HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter7_config_persist.py", "/app/test_reports/pytest/iter7.xml"],
+  "action_items": [
+    "Raise mobile top bar z-index above the overlay so the X toggle closes the drawer (currently blocked by overlay).",
+    "Optional: in _protect_rare_fish, do not early-return on missing rarity summary when protect_min_coins > 0 (scan pages for valuable fish too).",
+    "Optional: make _inventory_favorite use the grouped /favorite command format."
+  ],
+  "critical_code_review_comments": [
+    "VERIFIED: _extract_and_sell() order is STEP 1 self._protect_rare_fish(cfg, chat) (wrapped in try/except) -> STEP 2 extract flow (/extract + Inventory button + 🟢 SEMUA ARTEFAK + confirm) -> STEP 3 self._do_sell(cfg, chat, protected=True) which sends cfg.sell_command (/jual semua) and skips protection because of the protected flag.",
+    "VERIFIED: _protect_rare_fish paginates /inventory (max cfg.inventory_max_pages, dedup by page number), accumulates positions across ALL pages, then sends grouped commands: cfg.favorite_command_template.replace('{n}', ' '.join(nums)) chunked at 20 per command -> yields '/favorite 5 56 110' style, not one-by-one.",
+    "VERIFIED: _do_sell recursion at line 1090 (mancing retry) passes protected=protected; the gift-cancel recursion at line 1112 passes retry_after_favorite=True which the guard `if not protected and not retry_after_favorite` also treats as already-protected, so protection never re-runs in the extract+sell path."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter7_config_persist.py", "/app/test_reports/iteration_7.json"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "~90% (mobile drawer works; X-toggle close blocked by overlay)"},
+  "seed_data_creation": "None; used seeded admin@fishit.app. Config was modified then restored to original values.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@fishit.app / Admin@Fishit2026 (works)",
+  "context_for_next_testing_agent": "Live Telegram engine untestable (no api_id/api_hash) — extract/sell ordering verified by code review only. Backend regression suite: /app/backend/tests/test_iter7_config_persist.py. Mobile drawer selectors: mobile-menu-toggle, mobile-overlay, nav-* testids. Only open item: z-index of mobile top bar vs overlay.",
+  "rca_of_the_issue": "Mobile close-via-toggle failure: in DashboardLayout.jsx the top bar (line 53) and the overlay (line 75) both use z-40; since the overlay appears later in the DOM it paints on top and swallows pointer events over the toggle button, so the X button is unclickable while open."
+}

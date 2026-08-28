@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 9 REGRESSION pass after code-quality (safe) fixes. Backend: ran the whole /app/backend/tests suite with -n0 -> 115 passed / 4 failed (96.6%). All requested suites pass 100%: backend_test.py (env-loaded ADMIN_EMAIL/ADMIN_PASSWORD auth works, no hardcoded secret), test_iter6_live_api.py, test_iter7_config_persist.py, test_iter8_multiaccount.py (multi-account CRUD, plan limits, X-Account-Id isolation). Frontend: admin@fishit.app and user@fishit.app both log in and reach the dashboard; every page (Status, Telegram, Konfigurasi, Activity Log, Notifikasi, Paket, Kelola User) renders with ZERO console errors/warnings and zero page errors. Verified: account switcher lists accounts (admin 1/3, user 2/3) and add button shows correct plan label '+ Tambah akun (Elite)'; Config save persists per account after reload (admin and user); Activity Log loads + filter input + manual refresh work; Admin page loads 43 users + 4 stat cards and role/plan selects + active toggle all persist (toggle aktif->disabled->aktif, role user->admin); Notifications (seeded 2 unread) show unread badge in sidebar + page, single mark-read decrements, mark-all-read persists after reload; Landing page renders. No functional regressions found from the code-quality fixes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "n/a (stale test)", "issue": "tests/test_iter5_boost_filter.py::test_get_config_defaults asserts default boost_trigger_pattern contains 'PERAHU SIAP BERANGKAT' but the product default is now '(AUTO MANCING DIMULAI)'. Stale assertion, not a product bug — main agent should confirm the intended default and update the assertion."},
+      {"endpoint": "n/a (stale test)", "issue": "tests/test_bugfixes_iter2.py::test_cycle_group_passes_extend_on_active and test_iter5_boost_filter.py::test_cycle_group_pattern_is_pendaftaran_dibuka do inspect.getsource() string matching on AutomationRunner._cycle_group; the engine was refactored so the strings moved. Brittle source-introspection tests — should be rewritten or dropped."},
+      {"endpoint": "n/a (stale test)", "issue": "tests/test_bugfixes_iter3.py::test_handle_verification_tries_webview_before_pause fails because _handle_verification now performs the plan-gating manual-verify pause() (Starter plans) BEFORE the webview attempt. Code reviewed: this is intentional plan gating, not a regression; the source-order assertion is stale."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iter4_notif_resume_elite.py",
+    "/app/backend/tests/test_iter5_boost_filter.py",
+    "/app/backend/tests/seed_notifs_iter9.py",
+    "/app/test_reports/pytest/iter9_full.xml"
+  ],
+  "action_items": [
+    "Optional cleanup: update/remove the 4 stale assertions listed under backend_issues.minor (iter2/iter3/iter5 source-introspection + boost_trigger_pattern default) so the suite is green.",
+    "Note: backend_test.py had a hardcoded fallback BASE_URL (old preview host) — I replaced it with resolution from /app/frontend/.env; same fix applied to test_iter2/3/4/5 which either hardcoded the old host or crashed on collection when REACT_APP_BACKEND_URL was absent."
+  ],
+  "critical_code_review_comments": [
+    "Notifications are account-scoped by the composite key 'user_id:account_id' (automation_routes.py) but tests/test_iter4 seeded them with the plain user_id — I fixed the test. Worth documenting the composite key convention, as any future seed/migration writing plain user_id will silently produce invisible records.",
+    "get_account_key() still silently falls back to the default account for an unknown/foreign X-Account-Id (carried over from iteration 8) — consider 404 instead of silent fallback.",
+    "Prefer resolving REACT_APP_BACKEND_URL in tests from /app/frontend/.env rather than hardcoded preview hostnames (was pointing to a dead host in 3 files)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iter4_notif_resume_elite.py",
+    "/app/backend/tests/test_iter5_boost_filter.py",
+    "/app/backend/tests/test_bugfixes_iter2.py",
+    "/app/backend/tests/test_bugfixes_iter3.py",
+    "/app/backend/tests/seed_notifs_iter9.py"
+  ],
+  "success_rate": {"backend": "96.6% (115/119; 100% of the 4 requested suites)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Seeded 2 unread notifications for admin's account key via /app/backend/tests/seed_notifs_iter9.py to exercise the Notifications UI; deleted afterwards (verified 0 remaining). Admin/user config bot_username was temporarily changed for persistence checks and restored to @fish_it_bot. One throwaway test user (test_plan_e2ee04ae@example.com) had its role flipped user->admin by the admin-toggle test and was left as admin (harmless test artifact).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@fishit.app / Admin@Fishit2026 and user@fishit.app / FishIt#2026 (both valid; /app/memory/test_credentials.md is accurate). Backend tests read ADMIN_EMAIL/ADMIN_PASSWORD from /app/backend/.env.",
+  "context_for_next_testing_agent": "Run pytest with -n0 (xdist races on plan/account limits). BASE_URL in all test files now resolves from /app/frontend/.env. Requested suites (backend_test.py, iter4, iter6, iter7, iter8) are 100% green; the only 4 failures left are stale source-introspection/default-value assertions in test_bugfixes_iter2/3 and test_iter5. Notifications/config/status/events are keyed by 'user_id:account_id' — use seed_notifs_iter9.py as the pattern for seeding account-scoped data. Two dashboard timing notes for Playwright: after clicking nav-admin, wait for [data-testid=user-row] to appear (counting immediately yields 0), and account/plan-dependent switcher labels settle ~1-2s after login. Live Telegram MTProto still untestable (no api_id/api_hash).",
+  "rca_of_the_issue": "No product regressions from the code-quality fixes. The console.error replacements did not fire anywhere (no console output during full dashboard traversal), confirming the underlying API calls succeed. The 4 backend failures pre-date this pass: they assert engine source-code substrings (engine refactored) or an older default boost_trigger_pattern; plus one test-isolation defect (fixed): test_iter5 reused a fixed email so a previous run's PUT polluted the 'defaults' assertions."
+}

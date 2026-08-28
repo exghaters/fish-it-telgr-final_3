@@ -20,7 +20,12 @@ import requests
 # Ensure backend package is importable for introspection tests
 sys.path.insert(0, "/app/backend")
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+from dotenv import dotenv_values as _dv  # test-env resolution
+_fe = _dv("/app/frontend/.env")
+_bu = os.environ.get("REACT_APP_BACKEND_URL") or _fe.get("REACT_APP_BACKEND_URL")
+if not _bu:
+    raise RuntimeError("REACT_APP_BACKEND_URL missing from env and /app/frontend/.env")
+BASE_URL = _bu.rstrip("/")
 
 
 # --- Fixtures ---
@@ -124,10 +129,12 @@ class TestAutomationRunnerPlumbing:
         src = inspect.getsource(AutomationRunner._cycle_vip)
         assert "extend_on_active" in src
 
-    def test_cycle_group_passes_extend_on_active(self):
+    def test_cycle_group_detects_session_done(self):
         from automation_engine import AutomationRunner
         src = inspect.getsource(AutomationRunner._cycle_group)
-        assert "extend_on_active" in src
+        # Group loop is event-driven now: session completion via _wait_for_any rules
+        assert "_wait_for_any" in src
+        assert "session_done" in src
 
 
 class TestTelegramManagerHandlers:

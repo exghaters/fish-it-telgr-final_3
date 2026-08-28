@@ -1,92 +1,63 @@
-# PRD — Fish It Automation Panel
+# Fish It Autopilot — PRD
 
 ## Original Problem Statement
-Pengguna ingin membuat panel web (dashboard) untuk mengontrol automation game Telegram
-"Fish It". Automation memakai akun Telegram pribadi (MTProto/Telethon). Rencana:
-menjualnya sebagai layanan langganan.
+Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bugs:
+1. Engine spammed `/extract` + `/jual semua` while a fishing session was still running.
+2. Activity Log too noisy — logged messages from every group, not just the target.
+3. Chat filter should cover multiple VIP bots (only showed one).
+4. Verification button (Mini App / Cloudflare) — best-effort auto + manual fallback.
+5. Group "Daftar Mancing" join not working (wrong message_id from other groups).
+6. NEW: optional `/boost` when "⛵️ PERAHU SIAP BERANGKAT" (group) or "AUTO MANCING DIMULAI!" (bot) appears; 5-min duration, opt-in.
 
-## Personas
-- **Solo Owner (default user)** — punya 1 akun Telegram, ingin mancing 24/7 tanpa nunggu.
-- **Power User (Elite)** — punya 3+ akun, ingin dashboard admin & log panjang.
-- **Admin (kami)** — kelola user, upgrade paket, aktivasi/blokir.
+## Architecture
+- Backend: FastAPI (`/api` prefix), MongoDB (motor), Telethon MTProto per-user, JWT auth, Fernet-encrypted sessions.
+- Frontend: React (CRA+craco, `@/` alias), Tailwind, shadcn/ui, phosphor icons.
+- Engine: per-user `AutomationRunner` state machine (VIP direct + group modes).
+
+## User Personas
+- Fish It player wanting hands-free auto-mancing/extract/sell across their VIP bots.
+- Admin managing users/plans.
 
 ## Core Requirements (static)
-1. Auth email/password + role (user/admin) + plan (free/basic/pro/elite).
-2. Login Telegram MTProto per user (API ID/Hash + phone → code → 2FA).
-3. Session Fernet-encrypted di MongoDB; 1 worker per akun.
-4. State machine Fish It:
-   - VIP Direct: `/mancing` → wait `SESI MANCING SELESAI` → jeda 10s.
-   - Group: `/open_mancing@fish_it_vip_bot` → click **Daftar Mancing** → DM `/start` → wait 60s + 3min → SELESAI di DM.
-   - Setiap N sesi: `/extract` → klik **Inventory** → klik **🟢** → `/jual semua` → klik **Ya Jual Semua** (batal bila deteksi gift).
-   - Gift rarity `✨ SECRET/SECRET SHINY/CELESTIAL ✨` → `/inventory` paging → `/favorite <n>`.
-   - Verifikasi `🔒` → auto-click "Verifikasi Sekarang" + notif Mini App URL → pause bila CAPTCHA.
-5. Panel: landing, login/register, dashboard status realtime, telegram setup, konfigurasi, activity log, notifikasi, paket, admin.
-6. Automation jalan tanpa batas siklus.
+- Per-user Telegram login, configurable commands/patterns, activity log, notifications, plans, admin panel.
 
-## What's Been Implemented (2026-02-27)
-### Backend (`/app/backend/`)
-- `server.py` — FastAPI, lifespan seed admin, indexes, routers `/api/{auth,telegram,automation,admin}`.
-- `deps.py` — Mongo, Fernet, JWT (HS256), bcrypt, `get_current_user`, `get_current_admin`.
-- `models.py` — User, AutomationConfig (with configurable commands & regex patterns), AutomationState, EventDoc, Notification, TelegramSessionMeta.
-- `auth_routes.py` — register, login, me.
-- `tg_routes.py` — Telegram credentials save, send-code, verify (with 2FA), status, logout, recent-messages.
-- `automation_routes.py` — config GET/PUT, status, start/stop/pause/resume, events, notifications.
-- `admin_routes.py` — users list/update, stats.
-- `telegram_manager.py` — TelegramManager registry; UserTelegram wraps Telethon; encrypt session before persist.
-- `automation_engine.py` — AutomationRunner per user; state machine with gift detection, extract-inventory-🟢 flow, sell confirm with gift-check, /inventory paging + /favorite, verification handler.
+## Implemented (2026-08-28 rebuild)
+- Restored full codebase into /app; regenerated secrets (Fernet/JWT), seeded admin.
+- Chat filter: engine only reads bot + target group + `extra_allowed_chats` (defaults to the 4 VIP bots) → clean Activity Log, correct SESI SELESAI detection.
+- Anti-spam: hard guard `_ensure_no_active_session`; on "KAMU SEDANG MANCING! Waktu berjalan: X detik" it computes remaining (duration − X) and WAITS instead of retrying.
+- Optional auto `/boost` on trigger text with 5-min cooldown (opt-in switch).
+- Group join via "Daftar Mancing" (deep-link or callback), scoped to filtered chat.
+- Best-effort verification auto-click (pinned + recent), manual fallback + pause/resume.
+- Added: `/api/automation/start` now requires a connected Telegram session (clear 400 instead of silent engine failure).
+- Fixed backend shutdown CancelledError handling (found by testing).
+- Tested: backend 29/29 live-API pass; frontend all nav + config persistence pass.
 
-### Frontend (`/app/frontend/src/`)
-- `App.js` — router + AuthProvider + Sonner.
-- `lib/api.js`, `lib/auth.jsx` — axios interceptor + auth context.
-- `pages/Landing.jsx` — marketing landing (hero, features, how-it-works, pricing, footer).
-- `pages/Login.jsx`, `pages/Register.jsx`.
-- `pages/DashboardLayout.jsx` — sidebar nav with unread badge + role-based admin link.
-- `pages/dashboard/Status.jsx` — realtime status card (2s polling), Start/Stop/Pause/Resume, verification banner.
-- `pages/dashboard/TelegramSetup.jsx` — 3-step wizard (creds → phone → code+2FA) + logout.
-- `pages/dashboard/Configuration.jsx` — all config fields (mode, commands, timings, regex patterns), Switch enabled.
-- `pages/dashboard/Activity.jsx` — terminal-style auto-scroll log with filter.
-- `pages/dashboard/Notifications.jsx` — inbox with mark-read.
-- `pages/dashboard/Pricing.jsx` — 3 tiers, current plan indicator.
-- `pages/dashboard/Admin.jsx` — user table with role/plan/status update.
+## Implemented (2026-08-28, iter 8)
+- Multi-account Telegram per plan: Starter/free=1, Pro=1, Elite=3. Each account fully isolated (session, config, state, log, notif) via `X-Account-Id` header → composite key `user_id:account_id`. Endpoints: GET/POST/DELETE /api/telegram/accounts.
+- Sidebar account switcher (native select + add button; disabled at plan limit).
+- Plan gating: account limit enforced (4th → 403); Activity Log retention 7/30/90d by plan; auto-verify only Pro/Elite (free = manual, fail-safe to manual on error).
+- FIX: telegram_manager `_resolve_entity` with iter_dialogs fallback — resolves the "The key is not registered in the system (ResolveUsernameRequest)" crash + empty chat-filter. resolve_chat_id/send_command/get_last_messages all route through it.
+- Tests: backend 13/13 new + 36/36 regression pass; frontend switcher + regression pass.
 
-### Design
-- Dark cyberpunk gaming SaaS (Void #05050A + Hot Pink #EC4899 + Cyber Yellow #EAB308).
-- Fonts: Unbounded (headings), Outfit (body), JetBrains Mono (logs/api).
-- Phosphor Icons.
+## Implemented (2026-08-28, iter 9 — code quality)
+- Applied SAFE code-quality fixes: removed hardcoded admin password from tests (now loads from backend/.env), added console.error to 6 silent catch blocks, stable list key in Landing demo.
+- Intentionally skipped risky/over-engineering suggestions (httpOnly-cookie auth migration, large engine/Configuration refactors, hook-dep churn) to protect just-verified behavior.
+- Updated 4 stale introspection/default-value tests to match current design. Full backend suite now 119/119 green; frontend regression 100%.
 
-### Testing
-- Backend pytest: **20/20 pass**.
-- Frontend flows: landing, register, login, dashboard nav, config CRUD, admin — all work.
-- 1 bug fixed by testing agent: `/api/telegram/status` 500 when no session doc.
+## Backlog / Next
+- Forgot-password (needs email integration e.g. Resend, or admin reset).
+- Per-plan "all VIP bots vs single" gating (currently config is free-form).
 
-### Test credentials
-Lihat `/app/memory/test_credentials.md`.
 
-## Backlog / Prioritized
-### P0 — Real integration validation (butuh user)
-- Test real login Telegram MTProto dengan API ID/Hash + nomor asli.
-- Test siklus grup nyata di grup Fish It untuk verifikasi selector tombol/pesan.
-- Validate ✨ SECRET/SHINY/CELESTIAL detection dengan pesan bot real-time.
+## Implemented (2026-08-28, iter 7)
+- Extract/sell order corrected: STEP1 protect rare fish (/inventory → collect positions across all pages → ONE grouped `/favorite 5 56 110`, chunk 20) → STEP2 /extract → STEP3 /jual semua (verified by testing agent).
+- Rare protection no longer skips coins-based protection when no rarity-emoji summary and protect_min_coins>0.
+- Mobile dashboard sidebar is now a collapsible off-canvas drawer (hamburger toggle, overlay, auto-close on nav); top bar z-index fixed so the X closes it.
+- Backend regression 7/7 pass.
 
-### P1 — Payment gateway
-- Integrasi Stripe / Midtrans / Xendit untuk Rp 79k Pro & Rp 199k Elite.
-- Webhook untuk auto-upgrade plan setelah bayar.
 
-### P1 — Multi-Bot per user (Elite tier)
-- Izinkan >1 target grup/bot per akun (queue).
-
-### P2 — Analytics
-- Grafik ikan per jam, coins earned, gift count.
-- Export CSV log.
-
-### P2 — Notifications push
-- Telegram bot notif ke user tersendiri saat gift atau verifikasi.
-
-### P2 — Session persistence resilience
-- Setelah restart backend, resume automation yang sebelumnya running.
-- Distributed lease untuk deploy multi-worker.
-
-## Next Tasks
-1. User provide real Telegram API ID/Hash + phone → uji login end-to-end.
-2. User run 1 siklus mancing nyata → koreksi pola regex bila perlu.
-3. Setelah stabil, integrasikan Stripe/Midtrans + upgrade flow.
+## Implemented (2026-08-28, iter 10)
+- VIP-bot gating by plan: Starter (free/basic) limited to single bot/group — extra_allowed_chats disabled in UI + forced empty on save; Pro/Elite unrestricted (deps.PLAN_LIMITS.vip_multi).
+- Admin-driven password reset (user declined email/Resend): admin panel per-user Reset Password (key icon) -> POST /api/admin/users/{id}/reset-password (min 6, admin-only). Login shows "Lupa password? Hubungi admin".
+- Group START kickstart: on Start in group mode, engine immediately sends /open_mancing@<bot> to the group; VIP already sends /mancing immediately.
+- Verified: backend 130/130 pytest, frontend 100%.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { UsersThree, ShieldCheck, ShieldSlash, Crown } from "@phosphor-icons/react";
+import { UsersThree, ShieldCheck, ShieldSlash, Crown, Key } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -28,7 +28,7 @@ export default function Admin() {
       const [u, s] = await Promise.all([api.get("/admin/users"), api.get("/admin/stats")]);
       setUsers(u.data);
       setStats(s.data);
-    } catch (_e) { /* ignore */ }
+    } catch (e) { console.error("Gagal memuat data admin:", e); }
   };
 
   useEffect(() => {
@@ -44,6 +44,21 @@ export default function Admin() {
       await load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal update");
+    }
+  };
+
+  const resetPw = async (u) => {
+    const np = window.prompt(`Set password baru untuk ${u.email} (min 6 karakter):`);
+    if (np === null) return;
+    if (np.length < 6) {
+      toast.error("Password minimal 6 karakter");
+      return;
+    }
+    try {
+      await api.post(`/admin/users/${u.id}/reset-password`, { new_password: np });
+      toast.success(`Password ${u.email} berhasil direset`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal reset password");
     }
   };
 
@@ -135,6 +150,16 @@ export default function Admin() {
                   </span>
                 </TableCell>
                 <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => resetPw(u)}
+                    className="h-8 rounded-md text-xs mr-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                    data-testid="reset-password"
+                    title="Reset password user"
+                  >
+                    <Key size={14} />
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"

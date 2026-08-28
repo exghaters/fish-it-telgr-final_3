@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
-from deps import db, get_current_admin
+from deps import db, get_current_admin, hash_password
 from models import AdminUpdateUserInput, UserPublic
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+class ResetPasswordInput(BaseModel):
+    new_password: str = Field(min_length=6, max_length=200)
 
 
 def _public(u: dict) -> UserPublic:
@@ -40,6 +45,16 @@ async def update_user(user_id: str, body: AdminUpdateUserInput,
     if not res:
         raise HTTPException(404, "User not found")
     return _public(res)
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_password(user_id: str, body: ResetPasswordInput,
+                         _: dict = Depends(get_current_admin)):
+    res = await db.users.update_one(
+        {"id": user_id}, {"$set": {"password_hash": hash_password(body.new_password)}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
 
 
 @router.get("/stats")

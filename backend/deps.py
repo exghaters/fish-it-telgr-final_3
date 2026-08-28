@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -95,3 +96,42 @@ async def get_current_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     return user
+
+
+# --- Plan limits & multi-account ---
+PLAN_LIMITS = {
+    "free":  {"accounts": 1, "log_days": 7,  "auto_verify": False, "vip_multi": False, "label": "Starter"},
+    "basic": {"accounts": 1, "log_days": 7,  "auto_verify": False, "vip_multi": False, "label": "Starter"},
+    "pro":   {"accounts": 1, "log_days": 30, "auto_verify": True,  "vip_multi": True,  "label": "Pro"},
+    "elite": {"accounts": 3, "log_days": 90, "auto_verify": True,  "vip_multi": True,  "label": "Elite"},
+}
+
+
+def plan_limits(plan: Optional[str]) -> dict:
+    return PLAN_LIMITS.get((plan or "free").lower(), PLAN_LIMITS["free"])
+
+
+async def ensure_default_account(user_id: str) -> str:
+    doc = await db.telegram_accounts.find_one({"user_id": user_id})
+    if doc:
+        return doc["id"]
+    aid = str(uuid.uuid4())
+    await db.telegram_accounts.insert_one({
+        "id": aid, "user_id": user_id, "label": "Akun 1",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return aid
+
+
+async def get_account_key(
+    x_account_id: Optional[str] = Header(default=None),
+    user: dict = Depends(get_current_user),
+) -> str:
+    """Composite runtime key 'user_id:account_id' scoping all TG/automation state."""
+    uid = user["id"]
+    if x_account_id:
+        acc = await db.telegram_accounts.find_one({"id": x_account_id, "user_id": uid})
+        if acc:
+            return f"{uid}:{acc['id']}"
+    aid = await ensure_default_account(uid)
+    return f"{uid}:{aid}"

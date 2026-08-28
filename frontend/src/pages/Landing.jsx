@@ -176,8 +176,8 @@ export default function Landing() {
                   { k: "12:47", v: "42 ikan · 999,801 coins", c: "text-slate-400" },
                   { k: "12:48", v: "/mancing", c: "text-cyan-400" },
                   { k: "12:48", v: "AUTO MANCING - 03:07", c: "text-yellow-500" },
-                ].map((row, i) => (
-                  <div key={i} className="flex gap-3 text-xs font-mono">
+                ].map((row) => (
+                  <div key={`${row.k}-${row.v}`} className="flex gap-3 text-xs font-mono">
                     <span className="text-slate-600">{row.k}</span>
                     <span className={row.c}>{row.v}</span>
                   </div>

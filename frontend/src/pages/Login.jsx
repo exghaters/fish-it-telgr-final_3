@@ -89,6 +89,9 @@ export default function Login() {
               Daftar gratis
             </Link>
           </p>
+          <p className="mt-2 text-xs text-slate-600 text-center" data-testid="login-forgot-hint">
+            Lupa password? Hubungi admin untuk direset.
+          </p>
         </div>
       </div>
     </div>

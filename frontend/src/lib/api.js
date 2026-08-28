@@ -7,9 +7,13 @@ const api = axios.create({ baseURL: API_BASE });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("fishit_token");
+  config.headers = config.headers || {};
   if (token) {
-    config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  const acct = localStorage.getItem("fishit_account");
+  if (acct) {
+    config.headers["X-Account-Id"] = acct;
   }
   return config;
 });

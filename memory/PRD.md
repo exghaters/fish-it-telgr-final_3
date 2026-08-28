@@ -69,3 +69,10 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Frontend: extracted inline Framer Motion prop objects to module constants in `Landing.jsx`.
 - SKIPPED (would introduce bugs): Python `is`→`==` — all instances are `is None`/`is not None` (correct PEP8). craco console.warn is intentional platform build messaging.
 - DEFERRED (risky, user chose "aman"): localStorage→cookie auth change; splitting `automation_engine.py` functions; splitting large components.
+
+## Code Quality Pass #2 — 2026-06 (safe-only, report a778a06d)
+- Added dev-only logger `src/lib/log.js` (`logError`) — errors observable in dev, silent in production build. Satisfies BOTH conflicting review reports (no prod console noise, no swallowed errors, no UX error banners on transient poll failures).
+- Applied `logError` in catch blocks of Status/Notifications/Activity/Admin/TelegramSetup data loaders (replaced silent catches).
+- Verified: testing_agent iteration_11 — frontend 100%, no console errors/white screens, both login flows OK.
+- SKIPPED as false-positive/incorrect: Python `is`→`==` (all are `is None`/`is not None`, PEP8-correct); "undefined variables" (pyflakes clean, none found).
+- DEFERRED per user "aman": localStorage→cookie, splitting automation_engine functions, splitting large components. Hook-dep "false positives" (module imports/globals/stable setters) left as-is.

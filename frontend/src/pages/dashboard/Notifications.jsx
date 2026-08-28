@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
+import { logError } from "@/lib/log";
 
 const KIND_ICONS = {
   gift: { i: Sparkle, c: "text-pink-500 bg-pink-500/10" },
@@ -41,7 +42,7 @@ export default function Notifications() {
       const r = await api.get("/automation/notifications", { params: { limit: 100 } });
       setList(r.data.notifications || []);
       setUnread(r.data.unread_count || 0);
-    } catch { /* silent: background poll */ }
+    } catch (e) { logError("Gagal memuat notifikasi:", e); }
   }, []);
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export default function Notifications() {
     try {
       await api.post(`/automation/notifications/${id}/read`);
       await load();
-    } catch { /* silent */ }
+    } catch (e) { logError("Gagal menandai dibaca:", e); }
   };
 
   const resumeAndMarkRead = async (id) => {

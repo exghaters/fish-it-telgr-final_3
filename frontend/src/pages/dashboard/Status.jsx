@@ -14,6 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
+import { logError } from "@/lib/log";
 
 const STATUS_STYLES = {
   idle: { color: "text-slate-400", bg: "bg-slate-500/10", border: "border-slate-500/30", dot: "bg-slate-500" },
@@ -78,8 +79,8 @@ export default function Status() {
       ]);
       setStatus(s.data);
       setTg(t.data);
-    } catch {
-      /* silent: background poll */
+    } catch (e) {
+      logError("Gagal memuat status:", e);
     }
   }, []);
 

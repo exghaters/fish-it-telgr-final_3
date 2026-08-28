@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import api from "@/lib/api";
+import { logError } from "@/lib/log";
 
 export default function Admin() {
   const [users, setUsers] = useState([]);
@@ -28,7 +29,7 @@ export default function Admin() {
       const [u, s] = await Promise.all([api.get("/admin/users"), api.get("/admin/stats")]);
       setUsers(u.data);
       setStats(s.data);
-    } catch { /* silent: background poll */ }
+    } catch (e) { logError("Gagal memuat data admin:", e); }
   }, []);
 
   useEffect(() => {

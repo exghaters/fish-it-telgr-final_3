@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowsClockwise } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
+import { logError } from "@/lib/log";
 
 const KIND_STYLE = {
   info: "prefix-info",
@@ -47,7 +48,7 @@ export default function Activity() {
     try {
       const r = await api.get("/automation/events", { params: { limit: 200 } });
       setEvents((r.data.events || []).reverse());
-    } catch { /* silent: background poll */ }
+    } catch (e) { logError("Gagal memuat activity log:", e); }
   }, []);
 
   useEffect(() => {

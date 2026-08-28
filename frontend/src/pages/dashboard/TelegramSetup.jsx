@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
+import { logError } from "@/lib/log";
 
 export default function TelegramSetup() {
   const [status, setStatus] = useState(null);
@@ -23,7 +24,7 @@ export default function TelegramSetup() {
       setStatus(r.data);
       if (r.data.connected) setStep("done");
       else if (r.data.api_id_set) setStep("phone");
-    } catch { /* silent */ }
+    } catch (e) { logError("Gagal memuat status Telegram:", e); }
   };
 
   useEffect(() => {

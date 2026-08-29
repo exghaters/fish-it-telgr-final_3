@@ -42,7 +42,7 @@ def admin_token(creds):
     r = requests.post(f"{BASE_URL}/api/auth/login", json=creds, timeout=30)
     if r.status_code != 200:
         pytest.fail(f"admin login failed {r.status_code}: {r.text[:300]}")
-    tok = r.json().get("access_token")
+    tok = r.cookies.get("access_token")
     assert tok
     return tok
 
@@ -69,7 +69,7 @@ class TestHealthAuth:
         assert d["token_type"] == "bearer"
         assert d["user"]["email"] == creds["email"]
         assert d["user"]["role"] == "admin"
-        assert isinstance(d["access_token"], str) and len(d["access_token"]) > 20
+        assert r.cookies.get("access_token")
 
     def test_login_wrong_password(self, creds, client):
         r = client.post(f"{BASE_URL}/api/auth/login",
@@ -101,7 +101,7 @@ class TestHealthAuth:
         assert d["user"]["email"] == email
         assert d["user"]["role"] == "user"
         assert d["user"]["plan"] == "free"
-        tok = d["access_token"]
+        tok = r.cookies["access_token"]
         # token works
         me = client.get(f"{BASE_URL}/api/auth/me",
                         headers={"Authorization": f"Bearer {tok}"}, timeout=30)
@@ -176,7 +176,7 @@ class TestAutomationConfig:
         reg = client.post(f"{BASE_URL}/api/auth/register",
                           json={"email": email, "password": "Passw0rd!"}, timeout=30)
         assert reg.status_code == 200
-        tok = reg.json()["access_token"]
+        tok = reg.cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
         r = requests.get(f"{BASE_URL}/api/automation/config", headers=h, timeout=30)
         assert r.status_code == 200
@@ -233,9 +233,10 @@ class TestAutomationRuntime:
 
     def test_start_without_usernames_returns_400(self, client):
         email = f"TEST_start_{uuid.uuid4().hex[:8]}@example.com"
-        tok = client.post(f"{BASE_URL}/api/auth/register",
+        _rr = client.post(f"{BASE_URL}/api/auth/register",
                           json={"email": email, "password": "Passw0rd!"},
-                          timeout=30).json()["access_token"]
+                          timeout=30)
+        tok = _rr.cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
         cfg = requests.get(f"{BASE_URL}/api/automation/config", headers=h, timeout=30).json()
         cfg["bot_username"] = ""
@@ -284,9 +285,10 @@ class TestTelegram:
 
     def test_send_code_without_creds_no_500(self, client):
         email = f"TEST_tg_{uuid.uuid4().hex[:8]}@example.com"
-        tok = client.post(f"{BASE_URL}/api/auth/register",
+        _rr = client.post(f"{BASE_URL}/api/auth/register",
                           json={"email": email, "password": "Passw0rd!"},
-                          timeout=30).json()["access_token"]
+                          timeout=30)
+        tok = _rr.cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
         r = requests.post(f"{BASE_URL}/api/telegram/send-code", headers=h,
                           json={"phone": "+15551234567"}, timeout=60)
@@ -315,9 +317,10 @@ class TestAdmin:
 
     def test_non_admin_forbidden(self, client):
         email = f"TEST_nonadmin_{uuid.uuid4().hex[:8]}@example.com"
-        tok = client.post(f"{BASE_URL}/api/auth/register",
+        _rr = client.post(f"{BASE_URL}/api/auth/register",
                           json={"email": email, "password": "Passw0rd!"},
-                          timeout=30).json()["access_token"]
+                          timeout=30)
+        tok = _rr.cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         r = requests.get(f"{BASE_URL}/api/admin/users", headers=h, timeout=30)
         assert r.status_code == 403, r.status_code

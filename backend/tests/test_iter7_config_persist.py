@@ -11,7 +11,7 @@ if not base_url:
     raise RuntimeError("REACT_APP_BACKEND_URL missing")
 BASE_URL = base_url.rstrip("/")
 
-ADMIN = {"email": "admin@fishit.app", "password": "Admin@Fishit2026"}
+ADMIN = {"email": "admin@fishit.app", "password": dotenv_values("/app/backend/.env").get("ADMIN_PASSWORD")}
 
 
 @pytest.fixture(scope="module")
@@ -26,9 +26,8 @@ def token(client):
     r = client.post(f"{BASE_URL}/api/auth/login", json=ADMIN, timeout=30)
     if r.status_code != 200:
         pytest.fail(f"admin login failed {r.status_code}: {r.text[:300]}")
-    data = r.json()
-    tok = data.get("access_token") or data.get("token")
-    assert tok, f"no token in {data}"
+    tok = r.cookies.get("access_token")
+    assert tok, "no auth cookie set on login"
     return tok
 
 

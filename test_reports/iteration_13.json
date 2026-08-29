@@ -1,0 +1,42 @@
+{
+  "summary": "Iter13 security-fix regression: SEC-001 admin password rotation, SEC-002 ReDoS protection, brute-force lockout (5=>429), 7-day httpOnly JWT cookie with no token in body, password min-length 8, admin delete-user + self-delete block, and logout cookie clear. Backend pytest 17/17 passed. Frontend login/dashboard/logout flows verified via Playwright.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_security.py",
+    "/app/test_reports/pytest/iter13_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth_routes._check_lockout raises 429 only if a locked_until exists; the code correctly handles this, but consider clearing the lockout after LOCKOUT_MINUTES automatically (currently the record persists forever; fine because count check + expiry check both required).",
+    "TokenResponse still exposes access_token as Optional[str] in the model schema. Since the API never returns it, consider removing the field entirely from the response model to avoid confusion.",
+    "_REDOS_RX heuristic only catches (X+)+/*/(X*)*; more advanced ReDoS (e.g. overlapping alternations like (a|a)+) is not caught, but coverage is reasonable for the config surface. Consider a hard regex evaluation timeout as defense-in-depth."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter13_security.py"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% of critical flows"},
+  "test_credentials": "Admin: admin@fishit.app / Lpwa*PN7uCy5%wWRK@r9l%Q#. User: user@fishit.app / FishIt#2026. Old admin pwd 'Admin@Fishit2026' correctly rejected.",
+  "seed_data_creation": "Registered and cleaned up throwaway users (TEST_reg_*, TEST_del_*). Brute-force lockout tests used unique random emails (bruteforce_probe_<hex>@fishit.app) so no real account was locked.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend security test suite lives at /app/backend/tests/test_iter13_security.py. Cookie auth confirmed via Playwright: access_token cookie is httpOnly (invisible to document.cookie) and NOT in localStorage. All 5 sidebar routes (Status, Telegram, Konfigurasi, Activity Log, Notifikasi) load with cookie auth. Route names use Indonesian: /dashboard/config (not /configuration), /dashboard/notifications, /dashboard/activity, /dashboard/telegram. Logout button label is 'Keluar'.",
+  "verified_scenarios": [
+    "Admin login with NEW rotated password => 200, cookie set, no token in body",
+    "Admin login with OLD password 'Admin@Fishit2026' => 401 (both API and UI)",
+    "Elite user login => 200, redirected to /dashboard, cookie httpOnly, localStorage empty",
+    "5 dashboard endpoints (status, notifications, events, telegram/status, config) all 200 with cookie",
+    "PUT /api/automation/config with normal pattern => 200",
+    "PUT /api/automation/config with ReDoS '(a+)+$' => 400",
+    "PUT /api/automation/config with invalid regex '(((' => 400",
+    "PUT /api/automation/config with >300 char pattern => 400",
+    "5 wrong logins => 401, 6th => 429 (per ip:email lockout)",
+    "Register password <8 chars => 422; >=8 => 200 with cookie, no body token",
+    "Admin self-delete => 400; admin delete of throwaway user => 200",
+    "Logout => cookie cleared, /me returns 401, UI redirects to /login"
+  ]
+}

@@ -50,7 +50,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 # --- JWT ---
 _JWT_SECRET = os.environ["JWT_SECRET"]
 _JWT_ALG = "HS256"
-_JWT_TTL_HOURS = 24 * 30
+_JWT_TTL_HOURS = 24 * 7
 
 
 def create_access_token(user_id: str, role: str) -> str:

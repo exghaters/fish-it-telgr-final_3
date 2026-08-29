@@ -109,9 +109,9 @@ def http():
 @pytest.fixture(scope="module")
 def admin_token(http):
     r = http.post(f"{BASE_URL}/api/auth/login",
-                  json={"email": "admin@fishit.app", "password": "Admin@Fishit2026"})
+                  json={"email": "admin@fishit.app", "password": _dv("/app/backend/.env").get("ADMIN_PASSWORD")})
     assert r.status_code == 200, r.text
-    return r.json()["access_token"]
+    return r.cookies["access_token"]
 
 
 def auth_h(token):

@@ -33,7 +33,7 @@ def http():
 def admin_token(http):
     r = http.post(f"{BASE_URL}/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert r.status_code == 200, r.text
-    return r.json()["access_token"]
+    return r.cookies["access_token"]
 
 
 @pytest.fixture(scope="session")
@@ -43,7 +43,7 @@ def user_ctx(http):
     r = http.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": pw})
     assert r.status_code == 200, r.text
     data = r.json()
-    return {"email": email, "password": pw, "token": data["access_token"], "id": data["user"]["id"]}
+    return {"email": email, "password": pw, "token": r.cookies["access_token"], "id": data["user"]["id"]}
 
 
 def auth_h(token):
@@ -65,7 +65,7 @@ class TestAuth:
         r = http.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": pw})
         assert r.status_code == 200, r.text
         d = r.json()
-        assert "access_token" in d and d["user"]["email"] == email
+        assert d["user"]["email"] == email
         assert d["user"]["role"] == "user"
 
         # Duplicate register
@@ -75,7 +75,7 @@ class TestAuth:
         # Login
         r3 = http.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": pw})
         assert r3.status_code == 200
-        token = r3.json()["access_token"]
+        token = r3.cookies["access_token"]
 
         # /me
         r4 = http.get(f"{BASE_URL}/api/auth/me", headers=auth_h(token))
@@ -136,8 +136,8 @@ class TestAutomation:
         # New user, clear bot_username to empty
         email = f"empty_{uuid.uuid4().hex[:8]}@fishit.app"
         pw = "Testpass@1"
-        reg = http.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": pw}).json()
-        tok = reg["access_token"]
+        reg_r = http.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": pw})
+        tok = reg_r.cookies["access_token"]
         cfg = http.get(f"{BASE_URL}/api/automation/config", headers=auth_h(tok)).json()
         cfg["bot_username"] = ""
         cfg["group_username"] = ""
@@ -186,8 +186,8 @@ class TestTelegram:
 
     def test_send_code_without_creds_fails(self, http):
         email = f"tg_{uuid.uuid4().hex[:8]}@fishit.app"
-        reg = http.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": "Testpass@1"}).json()
-        tok = reg["access_token"]
+        reg_r = http.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": "Testpass@1"})
+        tok = reg_r.cookies["access_token"]
         r = http.post(
             f"{BASE_URL}/api/telegram/send-code",
             json={"phone": "+15551234567"},

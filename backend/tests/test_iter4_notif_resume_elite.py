@@ -16,7 +16,7 @@ MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "test_database")
 
 ADMIN_EMAIL = "admin@fishit.app"
-ADMIN_PASS = "Admin@Fishit2026"
+ADMIN_PASS = _dv("/app/backend/.env").get("ADMIN_PASSWORD")
 ELITE_EMAIL = "user@fishit.app"
 ELITE_PASS = "FishIt#2026"
 
@@ -32,8 +32,7 @@ def elite_token(s):
                json={"email": ELITE_EMAIL, "password": ELITE_PASS})
     assert r.status_code == 200, f"Elite login failed: {r.status_code} {r.text}"
     data = r.json()
-    assert "access_token" in data or "token" in data
-    return data.get("access_token") or data.get("token"), data
+    return r.cookies.get("access_token"), data
 
 
 @pytest.fixture(scope="module")
@@ -41,8 +40,7 @@ def admin_token(s):
     r = s.post(f"{BASE_URL}/api/auth/login",
                json={"email": ADMIN_EMAIL, "password": ADMIN_PASS})
     assert r.status_code == 200
-    d = r.json()
-    return d.get("access_token") or d.get("token")
+    return r.cookies.get("access_token")
 
 
 # ---- Elite login & JWT plan ----

@@ -26,7 +26,7 @@ class TestConfigNewFields:
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": pwd})
         r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": pwd})
         assert r.status_code == 200, r.text
-        return r.json()["access_token"]
+        return r.cookies["access_token"]
 
     def test_get_config_defaults(self, token):
         r = requests.get(f"{BASE_URL}/api/automation/config",

@@ -1,6 +1,7 @@
 """Automation control + config + events + notifications endpoints."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,6 +12,31 @@ from models import AutomationConfig, AutomationState, utcnow_iso
 from telegram_manager import telegram_manager
 
 router = APIRouter(prefix="/api/automation", tags=["automation"])
+
+# --- ReDoS protection for user-supplied regex config fields ---
+MAX_PATTERN_LEN = 300
+# Heuristic for catastrophic backtracking: a quantified group whose body also
+# contains a quantifier, e.g. (a+)+, (a*)*, (.*)+, ([ab]+)*.
+_REDOS_RX = re.compile(r"\([^()]*[+*?][^()]*\)[+*]")
+
+
+def _validate_regex_fields(body: AutomationConfig) -> None:
+    for field, value in body.model_dump().items():
+        if not field.endswith("_pattern") or not isinstance(value, str) or not value:
+            continue
+        if len(value) > MAX_PATTERN_LEN:
+            raise HTTPException(
+                400, f"Pola '{field}' terlalu panjang (maks {MAX_PATTERN_LEN} karakter).")
+        try:
+            re.compile(value)
+        except re.error as e:
+            raise HTTPException(400, f"Pola '{field}' tidak valid: {e}")
+        if _REDOS_RX.search(value):
+            raise HTTPException(
+                400,
+                f"Pola '{field}' berpotensi berbahaya (nested quantifier / ReDoS). "
+                "Sederhanakan polanya.",
+            )
 
 
 @router.get("/config", response_model=AutomationConfig)
@@ -26,6 +52,7 @@ async def get_config(akey: str = Depends(get_account_key)):
 @router.put("/config", response_model=AutomationConfig)
 async def update_config(body: AutomationConfig, akey: str = Depends(get_account_key),
                         user: dict = Depends(get_current_user)):
+    _validate_regex_fields(body)
     body.user_id = akey
     body.updated_at = utcnow_iso()
     # Plan gating: only Pro/Elite may add extra VIP bots/chats (multi-bot).

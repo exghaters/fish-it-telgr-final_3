@@ -43,7 +43,7 @@ def user_ctx(http):
     r = http.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": pw})
     assert r.status_code == 200, r.text
     d = r.json()
-    return {"email": email, "token": d["access_token"], "id": d["user"]["id"]}
+    return {"email": email, "token": r.cookies["access_token"], "id": d["user"]["id"]}
 
 
 def auth_h(token):
@@ -161,7 +161,7 @@ class TestRegression:
 
     def test_admin_login(self, http):
         r = http.post(f"{BASE_URL}/api/auth/login",
-                      json={"email": "admin@fishit.app", "password": "Admin@Fishit2026"})
+                      json={"email": "admin@fishit.app", "password": _dv("/app/backend/.env").get("ADMIN_PASSWORD")})
         assert r.status_code == 200
         assert r.json()["user"]["role"] == "admin"
 

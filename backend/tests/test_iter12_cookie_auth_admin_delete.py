@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 import requests
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 load_dotenv("/app/frontend/.env")
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
@@ -12,7 +12,7 @@ BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 ELITE_EMAIL = "user@fishit.app"
 ELITE_PASS = "FishIt#2026"
 ADMIN_EMAIL = "admin@fishit.app"
-ADMIN_PASS = "Admin@Fishit2026"
+ADMIN_PASS = dotenv_values("/app/backend/.env").get("ADMIN_PASSWORD")
 
 
 # ---------- Cookie-based auth ----------
@@ -23,7 +23,7 @@ def test_login_sets_httponly_cookie_and_returns_token():
                json={"email": ELITE_EMAIL, "password": ELITE_PASS})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert "access_token" in body and body["user"]["email"] == ELITE_EMAIL
+    assert body["user"]["email"] == ELITE_EMAIL
     # cookie set on session
     assert "access_token" in s.cookies.get_dict(), s.cookies.get_dict()
     # httpOnly + Secure attributes present in Set-Cookie
@@ -64,7 +64,7 @@ def test_header_bearer_still_works_as_fallback():
     r = requests.post(f"{BASE_URL}/api/auth/login",
                       json={"email": ELITE_EMAIL, "password": ELITE_PASS})
     assert r.status_code == 200
-    token = r.json()["access_token"]
+    token = r.cookies["access_token"]
     r2 = requests.get(f"{BASE_URL}/api/auth/me",
                       headers={"Authorization": f"Bearer {token}"})
     assert r2.status_code == 200

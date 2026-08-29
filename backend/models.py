@@ -39,7 +39,7 @@ class UserPublic(BaseModel):
 
 class RegisterInput(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6, max_length=200)
+    password: str = Field(min_length=8, max_length=200)
 
 
 class LoginInput(BaseModel):
@@ -48,7 +48,7 @@ class LoginInput(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: Optional[str] = None
     token_type: str = "bearer"
     user: UserPublic
 

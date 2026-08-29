@@ -17,7 +17,7 @@ from admin_routes import router as admin_router
 from auth_routes import router as auth_router
 from automation_engine import automation_engine
 from automation_routes import router as automation_router
-from deps import db, hash_password
+from deps import db, hash_password, verify_password
 from models import User, utcnow_iso
 from telegram_manager import telegram_manager
 from tg_routes import router as tg_router
@@ -30,14 +30,19 @@ log = logging.getLogger("server")
 
 
 async def seed_admin():
-    email = os.environ.get("ADMIN_EMAIL", "admin@fishit.local").lower()
-    password = os.environ.get("ADMIN_PASSWORD", "Admin@Fishit2026")
+    email = os.environ.get("ADMIN_EMAIL", "admin@fishit.app").lower()
+    password = os.environ["ADMIN_PASSWORD"]  # required; no insecure source default
     existing = await db.users.find_one({"email": email})
     if existing:
-        # Ensure admin role
+        updates = {}
         if existing.get("role") != "admin":
-            await db.users.update_one({"id": existing["id"]}, {"$set": {"role": "admin"}})
-            log.info("Upgraded existing user %s to admin", email)
+            updates["role"] = "admin"
+        # .env is the source of truth: rotate the hash if the password changed.
+        if not verify_password(password, existing["password_hash"]):
+            updates["password_hash"] = hash_password(password)
+        if updates:
+            await db.users.update_one({"id": existing["id"]}, {"$set": updates})
+            log.info("Updated admin user %s (%s)", email, ", ".join(updates.keys()))
         return
     admin = User(email=email, password_hash=hash_password(password), role="admin", plan="elite")
     await db.users.insert_one(admin.model_dump())
@@ -54,6 +59,7 @@ async def ensure_indexes():
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.telegram_accounts.create_index([("user_id", 1), ("created_at", 1)])
     await db.telegram_accounts.create_index("id", unique=True)
+    await db.login_attempts.create_index("identifier", unique=True)
 
 
 @asynccontextmanager

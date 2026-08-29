@@ -1,15 +1,21 @@
 """Auth endpoints: register, login, logout, me."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from deps import create_access_token, db, get_current_user, hash_password, verify_password
 from models import LoginInput, RegisterInput, TokenResponse, User, UserPublic
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# JWT lives 30 days; keep the httpOnly cookie in sync.
-COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+# httpOnly cookie lifetime mirrors the JWT TTL (7 days).
+COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+
+# Brute-force protection.
+MAX_FAILED = 5
+LOCKOUT_MINUTES = 15
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:
@@ -35,6 +41,50 @@ def _public(u: dict) -> UserPublic:
     )
 
 
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def _check_lockout(identifier: str) -> None:
+    rec = await db.login_attempts.find_one({"identifier": identifier})
+    if not rec or rec.get("count", 0) < MAX_FAILED:
+        return
+    locked_until = rec.get("locked_until")
+    if not locked_until:
+        return
+    lu = datetime.fromisoformat(locked_until)
+    now = datetime.now(timezone.utc)
+    if lu > now:
+        mins = int((lu - now).total_seconds()) // 60 + 1
+        raise HTTPException(
+            status_code=429,
+            detail=f"Terlalu banyak percobaan gagal. Coba lagi dalam {mins} menit.",
+        )
+
+
+async def _record_failure(identifier: str) -> None:
+    rec = await db.login_attempts.find_one({"identifier": identifier})
+    count = (rec.get("count", 0) if rec else 0) + 1
+    update = {
+        "identifier": identifier,
+        "count": count,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if count >= MAX_FAILED:
+        update["locked_until"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
+        ).isoformat()
+    await db.login_attempts.update_one(
+        {"identifier": identifier}, {"$set": update}, upsert=True)
+
+
+async def _clear_failures(identifier: str) -> None:
+    await db.login_attempts.delete_one({"identifier": identifier})
+
+
 @router.post("/register", response_model=TokenResponse)
 async def register(body: RegisterInput, response: Response):
     existing = await db.users.find_one({"email": body.email.lower()})
@@ -48,19 +98,23 @@ async def register(body: RegisterInput, response: Response):
     await db.users.insert_one(doc)
     token = create_access_token(user.id, user.role)
     _set_auth_cookie(response, token)
-    return TokenResponse(access_token=token, user=_public(doc))
+    return TokenResponse(user=_public(doc))
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginInput, response: Response):
+async def login(body: LoginInput, request: Request, response: Response):
+    identifier = f"{_client_ip(request)}:{body.email.lower()}"
+    await _check_lockout(identifier)
     user = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
     if not user or not verify_password(body.password, user["password_hash"]):
+        await _record_failure(identifier)
         raise HTTPException(status_code=401, detail="Email atau password salah")
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Akun dinonaktifkan")
+    await _clear_failures(identifier)
     token = create_access_token(user["id"], user.get("role", "user"))
     _set_auth_cookie(response, token)
-    return TokenResponse(access_token=token, user=_public(user))
+    return TokenResponse(user=_public(user))
 
 
 @router.post("/logout")

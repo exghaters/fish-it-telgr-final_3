@@ -12,7 +12,7 @@ if not base_url:
     raise RuntimeError("REACT_APP_BACKEND_URL missing")
 BASE_URL = base_url.rstrip("/")
 
-ADMIN = {"email": "admin@fishit.app", "password": "Admin@Fishit2026"}
+ADMIN = {"email": "admin@fishit.app", "password": dotenv_values("/app/backend/.env").get("ADMIN_PASSWORD")}
 USER = {"email": "user@fishit.app", "password": "FishIt#2026"}
 
 
@@ -26,7 +26,7 @@ def admin_token():
     r = login(**ADMIN)
     if r.status_code != 200:
         pytest.fail(f"Admin login failed {r.status_code}: {r.text[:300]}")
-    return r.json()["access_token"]
+    return r.cookies["access_token"]
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,7 @@ def temp_user(admin_h):
                       json={"email": email, "password": pwd}, timeout=30)
     assert r.status_code in (200, 201), f"register failed {r.status_code}: {r.text[:300]}"
     data = r.json()
-    token = data.get("access_token")
+    token = r.cookies.get("access_token")
     users = requests.get(f"{BASE_URL}/api/admin/users", headers=admin_h, timeout=30).json()
     uid = data.get("user", {}).get("id") or next(
         (u["id"] for u in users if u["email"].lower() == email.lower()), None)
@@ -89,8 +89,8 @@ class TestAdminResetPassword:
         # new password works
         new = login(temp_user["email"], new_pwd)
         assert new.status_code == 200, new.text[:300]
+        assert new.cookies.get("access_token")
         body = new.json()
-        assert isinstance(body.get("access_token"), str) and body["access_token"]
         assert body["user"]["email"] == temp_user["email"]
         temp_user["password"] = new_pwd
 
@@ -114,7 +114,7 @@ class TestVipGating:
         assert r.status_code == 200, r.text[:300]
         assert r.json()["plan"] == "free"
 
-        tok = login(temp_user["email"], temp_user["password"]).json()["access_token"]
+        tok = login(temp_user["email"], temp_user["password"]).cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         cfg = self._get_cfg(h)
         cfg["extra_allowed_chats"] = "@bot_a,@bot_b"
@@ -126,7 +126,7 @@ class TestVipGating:
     def test_basic_plan_strips_extra_chats(self, admin_h, temp_user):
         requests.put(f"{BASE_URL}/api/admin/users/{temp_user['id']}",
                      json={"plan": "basic"}, headers=admin_h, timeout=30)
-        tok = login(temp_user["email"], temp_user["password"]).json()["access_token"]
+        tok = login(temp_user["email"], temp_user["password"]).cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         cfg = self._get_cfg(h)
         cfg["extra_allowed_chats"] = "@bot_c"
@@ -135,7 +135,7 @@ class TestVipGating:
     def test_pro_plan_preserves_extra_chats(self, admin_h, temp_user):
         requests.put(f"{BASE_URL}/api/admin/users/{temp_user['id']}",
                      json={"plan": "pro"}, headers=admin_h, timeout=30)
-        tok = login(temp_user["email"], temp_user["password"]).json()["access_token"]
+        tok = login(temp_user["email"], temp_user["password"]).cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         cfg = self._get_cfg(h)
         cfg["extra_allowed_chats"] = "@bot_x,@bot_y"
@@ -146,14 +146,14 @@ class TestVipGating:
     def test_elite_plan_preserves_extra_chats(self, admin_h, temp_user):
         requests.put(f"{BASE_URL}/api/admin/users/{temp_user['id']}",
                      json={"plan": "elite"}, headers=admin_h, timeout=30)
-        tok = login(temp_user["email"], temp_user["password"]).json()["access_token"]
+        tok = login(temp_user["email"], temp_user["password"]).cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         cfg = self._get_cfg(h)
         cfg["extra_allowed_chats"] = "@elite_bot"
         assert self._put_cfg(h, cfg)["extra_allowed_chats"] == "@elite_bot"
 
     def test_seeded_elite_user_preserves_and_revert(self):
-        tok = login(**USER).json()["access_token"]
+        tok = login(**USER).cookies["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         cfg = self._get_cfg(h)
         original = cfg.get("extra_allowed_chats", "")

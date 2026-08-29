@@ -76,3 +76,8 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Verified: testing_agent iteration_11 — frontend 100%, no console errors/white screens, both login flows OK.
 - SKIPPED as false-positive/incorrect: Python `is`→`==` (all are `is None`/`is not None`, PEP8-correct); "undefined variables" (pyflakes clean, none found).
 - DEFERRED per user "aman": localStorage→cookie, splitting automation_engine functions, splitting large components. Hook-dep "false positives" (module imports/globals/stable setters) left as-is.
+
+## Feature: httpOnly Cookie Auth + Admin Delete User — 2026-06
+- SECURITY: JWT moved from localStorage to httpOnly+Secure cookie. Backend sets cookie on login/register (`_set_auth_cookie`), `get_current_user` reads Authorization header first then `access_token` cookie fallback. New `POST /api/auth/logout` clears cookie. Frontend axios `withCredentials:true`, no token in localStorage (only non-sensitive user object cached).
+- ADMIN: `DELETE /api/admin/users/{id}` — cascade deletes user-scoped data (telegram_accounts/config/state/sessions/events/notifications), blocks deleting own account (400). Admin UI: red trash button per row (data-testid=delete-user) with confirm + toast.
+- Tests: updated 4 "requires-auth" tests to clear shared requests.Session cookie (login now sets a cookie). Backend 130/130 pytest pass. testing_agent iteration_12: backend 100% (9/9), frontend 100% (6/6).

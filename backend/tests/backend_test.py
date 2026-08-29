@@ -87,6 +87,7 @@ class TestAuth:
         assert r.status_code == 401
 
     def test_me_requires_auth(self, http):
+        http.cookies.clear()  # ensure no auth cookie leaks from earlier login
         r = http.get(f"{BASE_URL}/api/auth/me")
         assert r.status_code == 401
 

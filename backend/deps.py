@@ -10,7 +10,7 @@ from typing import Optional
 import jwt
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 
@@ -73,13 +73,20 @@ def decode_token(token: str) -> dict:
         )
 
 
-async def get_current_user(authorization: Optional[str] = Header(default=None)) -> dict:
-    if not authorization or not authorization.lower().startswith("bearer "):
+async def get_current_user(
+    authorization: Optional[str] = Header(default=None),
+    access_token: Optional[str] = Cookie(default=None),
+) -> dict:
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    elif access_token:
+        token = access_token
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing bearer token",
+            detail="Missing token",
         )
-    token = authorization.split(" ", 1)[1].strip()
     payload = decode_token(token)
     user_id = payload.get("sub")
     if not user_id:

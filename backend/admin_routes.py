@@ -1,6 +1,8 @@
 """Admin-only endpoints: manage users."""
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -55,6 +57,23 @@ async def reset_password(user_id: str, body: ResetPasswordInput,
     if res.matched_count == 0:
         raise HTTPException(404, "User not found")
     return {"ok": True}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, admin: dict = Depends(get_current_admin)):
+    if user_id == admin["id"]:
+        raise HTTPException(400, "Tidak bisa menghapus akun sendiri")
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(404, "User not found")
+    await db.users.delete_one({"id": user_id})
+    # Cascade delete all user-scoped data (supports both "uid" and "uid:account" keys).
+    scope = {"$or": [{"user_id": user_id},
+                     {"user_id": {"$regex": f"^{re.escape(user_id)}:"}}]}
+    for coll in (db.automation_configs, db.automation_state, db.telegram_sessions,
+                 db.events, db.notifications, db.telegram_accounts):
+        await coll.delete_many(scope)
+    return {"ok": True, "deleted": target.get("email")}
 
 
 @router.get("/stats")

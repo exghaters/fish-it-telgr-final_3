@@ -83,6 +83,7 @@ class TestHealthAuth:
         assert r.json()["email"] == creds["email"]
 
     def test_me_no_token(self, client):
+        client.cookies.clear()  # ensure no auth cookie leaks from earlier login
         r = client.get(f"{BASE_URL}/api/auth/me", timeout=30)
         assert r.status_code in (401, 403), r.status_code
 
@@ -139,6 +140,7 @@ class TestAutomationConfig:
         assert isinstance(d["boost_cooldown_seconds"], int)
 
     def test_config_requires_auth(self, client):
+        client.cookies.clear()  # ensure no auth cookie leaks from earlier login
         r = client.get(f"{BASE_URL}/api/automation/config", timeout=30)
         assert r.status_code in (401, 403)
 
@@ -276,6 +278,7 @@ class TestTelegram:
         assert "connected" in d and "api_id_set" in d
 
     def test_status_requires_auth(self, client):
+        client.cookies.clear()  # ensure no auth cookie leaks from earlier login
         r = client.get(f"{BASE_URL}/api/telegram/status", timeout=30)
         assert r.status_code in (401, 403)
 

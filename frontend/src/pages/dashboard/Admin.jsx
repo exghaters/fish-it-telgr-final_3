@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { UsersThree, ShieldCheck, ShieldSlash, Crown, Key } from "@phosphor-icons/react";
+import { UsersThree, ShieldCheck, ShieldSlash, Crown, Key, Trash } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -60,6 +60,17 @@ export default function Admin() {
       toast.success(`Password ${u.email} berhasil direset`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal reset password");
+    }
+  };
+
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Hapus permanen user ${u.email}? Semua data terkait (akun Telegram, config, log) ikut terhapus.`)) return;
+    try {
+      await api.delete(`/admin/users/${u.id}`);
+      toast.success(`User ${u.email} dihapus`);
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal hapus user");
     }
   };
 
@@ -179,6 +190,16 @@ export default function Admin() {
                     data-testid="toggle-active"
                   >
                     {u.is_active ? <ShieldSlash size={14} /> : <ShieldCheck size={14} />}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => deleteUser(u)}
+                    className="h-8 rounded-md text-xs ml-2 border-red-500/30 text-red-400 hover:bg-red-500/10"
+                    data-testid="delete-user"
+                    title="Hapus user permanen"
+                  >
+                    <Trash size={14} />
                   </Button>
                 </TableCell>
               </TableRow>

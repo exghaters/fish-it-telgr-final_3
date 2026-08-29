@@ -96,3 +96,10 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Operators (elite) account cap raised 3 -> 100; list_accounts cap raised to 1000. Sidebar Pricing/Paket nav hidden (Admin kept).
 - BUGFIX: ensure_default_account race (concurrent first-load created duplicate default accounts) -> deterministic id 'default-{user_id}' + unique-index guard; verified 24 concurrent requests => 1 account.
 - Tests updated for new limits; 167/167 pytest pass. testing_agent iteration_14: frontend 100% critical flows, backend 100%.
+
+## Gameplay Bug Fixes (group re-open, verify-resume, account session) — 2026-06
+- Bug1 (group): "❌ PENDAFTARAN DIBATALKAN / Tidak ada peserta" now triggers auto re-open of /open_mancing@<bot> (new pendaftaran_cancelled_pattern + 'cancelled' rule in _cycle_group, 3s debounce).
+- Bug2 (verify-resume): engine remembers the pending join deeplink (/start daftar2_...) or /mancing in self._pending_after_verify; re-issues it after verification finishes — both auto-verify success (_resend_pending_after_verify force) and manual-resume (_wait_for_any after _wait_for_pause, gated by _paused_for_verify). New registration_success_pattern clears pending to avoid double-send.
+- Bug3 (account session): /telegram/status (get_meta rehydrate=True) now rehydrates the Telethon client from the stored encrypted session, so switching accounts / backend restart no longer forces a phone re-login for an already-connected account.
+- Tests: new backend/tests/test_iter15_group_reopen_verify_resume.py (5 unit tests). Full suite 172 local / 175 with testing-agent API tests. testing_agent iteration_15: backend 100%, frontend 100%, no issues.
+- NOTE: real-Telegram effects (green 'connected' after rehydrate, actual button clicks, Cloudflare verify) still require the user's real one-cycle confirmation — the test env has no live Telegram session.

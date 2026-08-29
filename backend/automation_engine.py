@@ -77,6 +77,9 @@ class AutomationRunner:
         self._filter_key: Optional[str] = None
         self._resume_handler = None
         self._group_kickstarted = False
+        # Command to re-issue after a verification completes (deeplink /start or /mancing)
+        self._pending_after_verify: Optional[tuple] = None
+        self._paused_for_verify = False
 
     def is_running(self) -> bool:
         return self.task is not None and not self.task.done()
@@ -275,6 +278,7 @@ class AutomationRunner:
         while _now() < deadline and not self.stop_flag.is_set():
             if self.pause_flag.is_set():
                 await self._wait_for_pause()
+                await self._resend_pending_after_verify()
                 continue
             try:
                 item = await asyncio.wait_for(ut.event_queue.get(), timeout=1.0)
@@ -302,6 +306,13 @@ class AutomationRunner:
                 finally:
                     self._in_verification = False
                 continue
+            if (
+                cfg.registration_success_pattern
+                and re.search(cfg.registration_success_pattern, text, re.IGNORECASE)
+            ):
+                # Already registered → nothing pending to re-issue.
+                self._pending_after_verify = None
+                self._paused_for_verify = False
             for name, rx, chatsel in compiled:
                 if chatsel == "group" and group_id is not None and chat_id != group_id:
                     continue
@@ -311,6 +322,31 @@ class AutomationRunner:
                     item["_matched"] = name
                     return item
         return None
+
+    async def _resend_pending_after_verify(self, force: bool = False):
+        """Re-issue the join deeplink / mancing command once a verification finished.
+
+        The Fish It bot asks to '/daftar lagi' (or continue with /mancing) after a
+        verification, so we replay the exact command that triggered it.
+        """
+        if self.stop_flag.is_set():
+            return
+        if not force and not self._paused_for_verify:
+            return
+        self._paused_for_verify = False
+        pend = self._pending_after_verify
+        self._pending_after_verify = None
+        if not pend:
+            return
+        chat, command = pend
+        try:
+            ut = await self._get_client()
+            await self._drain_queue()
+            await ut.send_command(chat, command)
+            await self._event("message-out", "info",
+                              f"Verifikasi selesai → lanjut: {command} → {chat}")
+        except Exception as exc:
+            await self._event("error", "warn", f"Lanjut setelah verifikasi gagal: {exc}")
 
     async def _drain_queue(self):
         ut = await self._get_client()
@@ -607,6 +643,8 @@ class AutomationRunner:
             await self._save_state()
             await self._drain_queue()
             await ut.send_command(target, cfg.open_command)
+            # Remember so we can re-issue after a verification (bot: "lanjut /mancing")
+            self._pending_after_verify = (target, cfg.open_command)
             await self._event("message-out", "info",
                               f"Sent {cfg.open_command}", meta={"chat": target})
             # Quick check: inventory penuh → jual dulu, jangan paksa mancing
@@ -682,6 +720,8 @@ class AutomationRunner:
                         if dm:
                             bot_uname, param = dm.group(1), dm.group(2)
                             await ut.send_command(f"@{bot_uname}", f"/start {param}")
+                            # Remember so we can re-issue after a verification ("/daftar lagi")
+                            self._pending_after_verify = (f"@{bot_uname}", f"/start {param}")
                             await self._event(
                                 "click", "info",
                                 f"Join via deep-link: /start {param} → @{bot_uname}")
@@ -739,6 +779,7 @@ class AutomationRunner:
 
         rules = [
             {"name": "pendaftaran", "pattern": cfg.pendaftaran_open_pattern, "chat": "group"},
+            {"name": "cancelled", "pattern": cfg.pendaftaran_cancelled_pattern, "chat": "group"},
             {"name": "waktu_habis", "pattern": cfg.waktu_habis_pattern, "chat": "group"},
             {"name": "session_done", "pattern": cfg.session_done_pattern, "chat": "bot"},
             {"name": "inventory_full", "pattern": cfg.inventory_full_pattern, "chat": "bot"},
@@ -769,6 +810,16 @@ class AutomationRunner:
             await ut.send_command(group, open_cmd)
             await self._event("message-out", "info",
                               f"WAKTU HABIS → Sent {open_cmd} → {group}")
+
+        elif name == "cancelled":
+            # "❌ PENDAFTARAN DIBATALKAN / Tidak ada peserta" → buka ulang otomatis
+            self.state.status = "opening"
+            await self._save_state()
+            await asyncio.sleep(3)  # jeda singkat agar tidak spam
+            await self._drain_queue()
+            await ut.send_command(group, open_cmd)
+            await self._event("message-out", "info",
+                              f"PENDAFTARAN DIBATALKAN → buka ulang {open_cmd} → {group}")
 
         elif name == "session_done":
             self._session_active = False
@@ -1231,6 +1282,7 @@ class AutomationRunner:
                 "verification", "🔒 Verifikasi Manual (paket Starter)",
                 f"Paket kamu memakai verifikasi manual. Selesaikan verifikasi di Telegram, "
                 f"lalu ketik '{cfg.resume_keyword}' di chat bot (atau Resume di dashboard).")
+            self._paused_for_verify = True
             await self.pause(
                 f"Verifikasi manual — ketik '{cfg.resume_keyword}' di bot / Resume")
             return
@@ -1316,7 +1368,7 @@ class AutomationRunner:
             success = await self._wait_for_message(
                 chat=chat,
                 patterns=[cfg.session_done_pattern +
-                          r"|berhasil|sukses|verified|terverifikasi|AUTO MANCING"],
+                          r"|berhasil|sukses|verified|terverifikasi|terdaftar|AUTO MANCING"],
                 timeout=30,
                 collect_text=False,
             )
@@ -1326,6 +1378,8 @@ class AutomationRunner:
                 self.state.verification_url = None
                 self._last_verification_at = None
                 await self._save_state()
+                # Continue the flow the bot asked for ("/daftar lagi" or "/mancing")
+                await self._resend_pending_after_verify(force=True)
                 return
 
         body = (
@@ -1341,6 +1395,7 @@ class AutomationRunner:
             )
         await self._notify("verification", "🔒 Verifikasi Diperlukan", body,
                            action_url=url)
+        self._paused_for_verify = True
         await self.pause(
             f"Verifikasi manual — selesaikan lalu ketik '{cfg.resume_keyword}' di bot / Resume")
 

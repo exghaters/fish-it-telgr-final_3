@@ -353,12 +353,19 @@ class TelegramManager:
             self.users[user_id] = ut
             return ut
 
-    async def get_meta(self, user_id: str) -> dict:
+    async def get_meta(self, user_id: str, rehydrate: bool = False) -> dict:
         doc = await db.telegram_sessions.find_one(
             {"user_id": user_id}, {"_id": 0, "session_enc": 0, "api_hash_enc": 0}
         )
         connected = False
         ut = self.users.get(user_id)
+        # Rehydrate a live client from the stored encrypted session when asked
+        # (e.g. after a backend restart or switching back to this account).
+        if ut is None and rehydrate and doc and doc.get("api_id"):
+            try:
+                ut = await self.get_or_create(user_id)
+            except Exception:
+                ut = None
         if ut and ut.client and ut.client.is_connected():
             try:
                 connected = await ut.client.is_user_authorized()

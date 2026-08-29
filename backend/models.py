@@ -137,6 +137,8 @@ class AutomationConfig(BaseModel):
 
     # Group flow (event-driven) patterns
     pendaftaran_open_pattern: str = r"(PENDAFTARAN DIBUKA)"
+    pendaftaran_cancelled_pattern: str = r"(PENDAFTARAN DIBATALKAN|Tidak ada peserta)"
+    registration_success_pattern: str = r"(Pendaftaran Berhasil|Sudah Terdaftar)"
     waktu_habis_pattern: str = r"(WAKTU HABIS)"
 
     # Rare-fish protection: favorite before /jual semua so they are NOT sold.

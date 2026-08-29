@@ -95,7 +95,7 @@ async def delete_account(account_id: str, user: dict = Depends(get_current_user)
 # ---------- Session (scoped to the selected account via X-Account-Id) ----------
 @router.get("/status", response_model=TelegramSessionMeta)
 async def status(akey: str = Depends(get_account_key)):
-    meta = await telegram_manager.get_meta(akey)
+    meta = await telegram_manager.get_meta(akey, rehydrate=True)
     return TelegramSessionMeta(**meta)
 
 

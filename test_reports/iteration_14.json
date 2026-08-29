@@ -1,0 +1,47 @@
+{
+  "summary": "Iter14: Joki/operator model regression. Verified public register UI removed (/register redirects to landing, Login page has no signup link), Admin can create operator (default plan elite / role user, password min 8), new operator logs in and reaches dashboard, account label create+rename via window.prompt works and persists, sidebar has NO nav-pricing, operator isolation confirmed (two operators see disjoint Telegram account lists, cross-user PATCH => 404), regression on admin/elite login + logout + delete-user. Backend pytest 11/11 passed. Playwright end-to-end flows all passed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "New-operator first dashboard load", "issue": "Sidebar account switcher shows 4 duplicate 'Akun 1 · —' rows for a brand-new operator. Root cause: race in backend deps.ensure_default_account — several concurrent requests during initial dashboard mount (list_accounts + get_account_key from status/config/notifications) each see 0 accounts and each insert a default. Not new to iter14 but user-visible for operators created via admin. Suggest: change to atomic upsert with a unique compound index on (user_id, is_default) or use find_one_and_update with $setOnInsert.", "affected_selectors": ["[data-testid='account-switcher']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter14_operator_admin.py",
+    "/app/test_reports/pytest/iter14_results.xml"
+  ],
+  "action_items": [
+    "Fix race in backend/deps.py::ensure_default_account so newly-provisioned operators get exactly ONE default 'Akun 1' (atomic upsert on {user_id} with $setOnInsert, or unique index)."
+  ],
+  "critical_code_review_comments": [
+    "deps.ensure_default_account: find_one -> insert_one is not atomic; concurrent requests during first login create duplicate 'Akun 1' rows for fresh users. Use find_one_and_update({user_id, is_default:true}, {$setOnInsert:{...}}, upsert=True) plus a unique partial index.",
+    "admin_routes.reset_password enforces min_length=6 while auth_routes/register (RegisterInput) and admin_routes.create_user enforce min_length=8. Password policy is inconsistent; align to 8 everywhere.",
+    "Admin.jsx client-side validation says 'Password minimal 6 karakter' at line 59 while the create form correctly checks 8; the reset-password prompt is capped at 6 which does not match register's 8. Consistency issue.",
+    "Login.jsx page still has `import { Link ... }` used only for the logo-back-to-home; fine, but note the `data-testid=login-forgot-hint` text mentions 'Lupa password? Minta admin mereset' which is good UX given self-register is disabled."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter14_operator_admin.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% of critical flows"},
+  "test_credentials": "Admin: admin@fishit.app / Lpwa*PN7uCy5%wWRK@r9l%Q#. Elite: user@fishit.app / FishIt#2026. Throwaway operators are op_probe_<hex>@fishit.app / OpProbe1234 and are cleaned up by tests.",
+  "seed_data_creation": "Ephemeral: throwaway operators via admin API and one TEST_reg_* via register. All cleaned up in fixtures/teardown. Elite user has 1 default account whose label was renamed then restored.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iter14_operator_admin.py for regression on operator/admin flows. Run with `pytest backend/tests/test_iter14_operator_admin.py -o addopts=''` to bypass xdist. Playwright dialog handler pattern: page.on('dialog', lambda d: d.accept('label')) BEFORE clicking account-add/account-rename. Note pre-existing race bug that produces duplicate 'Akun 1' entries for freshly-provisioned operators.",
+  "verified_scenarios": [
+    "GET /register (frontend) => redirect to '/' (no signup page rendered)",
+    "Login page has zero anchors matching /daftar|sign.?up|register/",
+    "Admin login via UI => /dashboard, cookie set",
+    "Sidebar NAV: nav-pricing ABSENT; nav-status/telegram/config/activity/notifications PRESENT; nav-admin visible only for admin",
+    "POST /api/admin/users with 8-char pwd => 200; user has role=user plan=elite is_active=true",
+    "POST /api/admin/users with 5-char pwd => 422; duplicate email => 400; non-admin => 403",
+    "New operator logs in => /dashboard; nav-admin and nav-pricing hidden; sidebar shows USER · ELITE",
+    "account-rename prompt updates label and persists (GET reflects new label)",
+    "account-add prompt creates a new labeled account via POST /api/telegram/accounts",
+    "Operator isolation: op2 cannot see op1's accounts; PATCH cross-user => 404",
+    "Admin logout => cookie cleared, /me 401, redirected to /login",
+    "Admin delete-user with confirm => operator row removed"
+  ]
+}

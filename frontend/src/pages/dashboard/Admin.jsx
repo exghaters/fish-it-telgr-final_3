@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { UsersThree, ShieldCheck, ShieldSlash, Crown, Key, Trash } from "@phosphor-icons/react";
+import { UsersThree, ShieldCheck, ShieldSlash, Crown, Key, Trash, UserPlus } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -23,6 +24,9 @@ import { logError } from "@/lib/log";
 export default function Admin() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -63,6 +67,26 @@ export default function Admin() {
     }
   };
 
+  const createUser = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      toast.error("Password minimal 8 karakter");
+      return;
+    }
+    setCreating(true);
+    try {
+      await api.post("/admin/users", { email: newEmail.trim(), password: newPassword, role: "user", plan: "elite" });
+      toast.success(`Akun operator ${newEmail.trim()} dibuat`);
+      setNewEmail("");
+      setNewPassword("");
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal membuat user");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const deleteUser = async (u) => {
     if (!window.confirm(`Hapus permanen user ${u.email}? Semua data terkait (akun Telegram, config, log) ikut terhapus.`)) return;
     try {
@@ -99,6 +123,42 @@ export default function Admin() {
           />
         </div>
       )}
+
+      <div className="border border-pink-500/20 bg-[#0F0F16] rounded-lg p-5" data-testid="create-user-card">
+        <div className="flex items-center gap-2 mb-4">
+          <UserPlus size={18} className="text-pink-400" />
+          <span className="font-heading font-bold">Buat Akun Operator</span>
+          <span className="text-xs text-slate-500 ml-auto">Untuk Anda / partner joki — plan Elite (akun tak terbatas)</span>
+        </div>
+        <form onSubmit={createUser} className="grid sm:grid-cols-[1fr_1fr_auto] gap-3">
+          <Input
+            type="email"
+            required
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            placeholder="email operator"
+            data-testid="new-user-email"
+            className="bg-[#05050A] border-white/10 focus:border-pink-500 h-10"
+          />
+          <Input
+            type="text"
+            required
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="password (min 8 karakter)"
+            data-testid="new-user-password"
+            className="bg-[#05050A] border-white/10 focus:border-pink-500 h-10 font-mono"
+          />
+          <Button
+            type="submit"
+            disabled={creating}
+            data-testid="create-user-submit"
+            className="bg-pink-500 hover:bg-pink-600 text-black font-bold h-10 rounded-md px-6"
+          >
+            {creating ? "Membuat..." : "Buat"}
+          </Button>
+        </form>
+      </div>
 
       <div className="border border-white/10 bg-[#0F0F16] rounded-lg overflow-hidden">
         <div className="p-4 border-b border-white/5 flex items-center gap-2">

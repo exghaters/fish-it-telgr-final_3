@@ -14,6 +14,7 @@ from deps import (
 )
 from models import (
     AccountCreateInput,
+    AccountUpdateInput,
     TelegramAccount,
     TelegramCredentialsInput,
     TelegramSendCodeInput,
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 async def list_accounts(user: dict = Depends(get_current_user)):
     await ensure_default_account(user["id"])
     docs = await db.telegram_accounts.find(
-        {"user_id": user["id"]}, {"_id": 0}).sort("created_at", 1).to_list(10)
+        {"user_id": user["id"]}, {"_id": 0}).sort("created_at", 1).to_list(1000)
     limits = plan_limits(user.get("plan"))
     out = []
     for d in docs:
@@ -56,6 +57,17 @@ async def create_account(body: AccountCreateInput, user: dict = Depends(get_curr
     acc = TelegramAccount(user_id=user["id"], label=body.label or f"Akun {count + 1}")
     await db.telegram_accounts.insert_one(acc.model_dump())
     return acc.model_dump()
+
+
+@router.patch("/accounts/{account_id}")
+async def update_account(account_id: str, body: AccountUpdateInput,
+                         user: dict = Depends(get_current_user)):
+    label = body.label.strip()
+    res = await db.telegram_accounts.update_one(
+        {"id": account_id, "user_id": user["id"]}, {"$set": {"label": label}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
+    return {"ok": True, "label": label}
 
 
 @router.delete("/accounts/{account_id}")

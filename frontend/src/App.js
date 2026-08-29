@@ -3,7 +3,6 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/lib/auth.jsx";
 import Landing from "@/pages/Landing.jsx";
 import Login from "@/pages/Login.jsx";
-import Register from "@/pages/Register.jsx";
 import DashboardLayout from "@/pages/DashboardLayout.jsx";
 import Status from "@/pages/dashboard/Status.jsx";
 import TelegramSetup from "@/pages/dashboard/TelegramSetup.jsx";
@@ -41,7 +40,6 @@ function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
 
           <Route
             path="/dashboard"

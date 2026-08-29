@@ -4,16 +4,23 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from deps import db, get_current_admin, hash_password
-from models import AdminUpdateUserInput, UserPublic
+from models import AdminUpdateUserInput, User, UserPublic
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 class ResetPasswordInput(BaseModel):
     new_password: str = Field(min_length=6, max_length=200)
+
+
+class CreateUserInput(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    role: str = "user"
+    plan: str = "elite"  # operators default to elite (many Telegram accounts)
 
 
 def _public(u: dict) -> UserPublic:
@@ -31,6 +38,18 @@ def _public(u: dict) -> UserPublic:
 async def list_users(_: dict = Depends(get_current_admin)):
     docs = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
     return [_public(d) for d in docs]
+
+
+@router.post("/users", response_model=UserPublic)
+async def create_user(body: CreateUserInput, _: dict = Depends(get_current_admin)):
+    if await db.users.find_one({"email": body.email.lower()}):
+        raise HTTPException(400, "Email sudah terdaftar")
+    role = body.role if body.role in ("user", "admin") else "user"
+    user = User(email=body.email.lower(), password_hash=hash_password(body.password),
+                role=role, plan=body.plan)
+    doc = user.model_dump()
+    await db.users.insert_one(doc)
+    return _public(doc)
 
 
 @router.put("/users/{user_id}", response_model=UserPublic)

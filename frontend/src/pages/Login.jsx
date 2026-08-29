@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { Link, useNavigate } from "react-router-dom";import { toast } from "sonner";
 import { Fish, ArrowRight } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,14 +82,8 @@ export default function Login() {
             </Button>
           </form>
 
-          <p className="mt-6 text-sm text-slate-500 text-center">
-            Belum punya akun?{" "}
-            <Link to="/register" className="text-pink-500 hover:text-pink-400" data-testid="login-to-register">
-              Daftar gratis
-            </Link>
-          </p>
-          <p className="mt-2 text-xs text-slate-600 text-center" data-testid="login-forgot-hint">
-            Lupa password? Hubungi admin untuk direset.
+          <p className="mt-6 text-xs text-slate-600 text-center" data-testid="login-forgot-hint">
+            Butuh akun operator? Hubungi admin. Lupa password? Minta admin mereset.
           </p>
         </div>
       </div>

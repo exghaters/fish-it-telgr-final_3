@@ -7,11 +7,11 @@ import {
   Sliders,
   ListBullets,
   Bell,
-  Ticket,
   UsersThree,
   SignOut,
   List,
   X,
+  PencilSimple,
 } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth.jsx";
 import api from "@/lib/api";
@@ -23,14 +23,13 @@ const NAV = [
   { to: "/dashboard/config", label: "Konfigurasi", icon: Sliders, testid: "nav-config" },
   { to: "/dashboard/activity", label: "Activity Log", icon: ListBullets, testid: "nav-activity" },
   { to: "/dashboard/notifications", label: "Notifikasi", icon: Bell, testid: "nav-notifications" },
-  { to: "/dashboard/pricing", label: "Paket", icon: Ticket, testid: "nav-pricing" },
 ];
 
 const PLAN_UI = {
   free: { limit: 1, plan_label: "Starter" },
   basic: { limit: 1, plan_label: "Starter" },
   pro: { limit: 1, plan_label: "Pro" },
-  elite: { limit: 3, plan_label: "Elite" },
+  elite: { limit: 100, plan_label: "Elite" },
 };
 
 export default function DashboardLayout() {
@@ -72,13 +71,29 @@ export default function DashboardLayout() {
   };
 
   const addAcc = async () => {
+    const label = window.prompt("Label akun (nama pelanggan, mis. 'Budi - 0812xxx'):", `Akun ${accounts.length + 1}`);
+    if (label === null) return;
     try {
-      const r = await api.post("/telegram/accounts", { label: `Akun ${accounts.length + 1}` });
+      const r = await api.post("/telegram/accounts", { label: label.trim() || `Akun ${accounts.length + 1}` });
       localStorage.setItem("fishit_account", r.data.id);
       toast.success("Akun Telegram baru dibuat");
       window.location.reload();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Tidak bisa menambah akun");
+    }
+  };
+
+  const renameAcc = async () => {
+    const current = accounts.find((a) => a.id === activeAcc);
+    if (!current) return;
+    const label = window.prompt("Ubah label akun (nama pelanggan):", current.label);
+    if (label === null || !label.trim()) return;
+    try {
+      await api.patch(`/telegram/accounts/${activeAcc}`, { label: label.trim() });
+      setAccounts((prev) => prev.map((a) => (a.id === activeAcc ? { ...a, label: label.trim() } : a)));
+      toast.success("Label akun diperbarui");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal mengubah label");
     }
   };
 
@@ -148,19 +163,29 @@ export default function DashboardLayout() {
               {accounts.length}/{accInfo.limit}
             </span>
           </div>
-          <select
-            value={activeAcc}
-            onChange={(e) => switchAcc(e.target.value)}
-            data-testid="account-switcher"
-            className="w-full bg-[#05050A] border border-white/10 rounded-md text-sm px-2 py-2 text-slate-200 focus:border-pink-500 outline-none"
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.label}
-                {a.connected ? " · ✓" : " · —"}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5">
+            <select
+              value={activeAcc}
+              onChange={(e) => switchAcc(e.target.value)}
+              data-testid="account-switcher"
+              className="flex-1 min-w-0 bg-[#05050A] border border-white/10 rounded-md text-sm px-2 py-2 text-slate-200 focus:border-pink-500 outline-none"
+            >
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                  {a.connected ? " · ✓" : " · —"}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={renameAcc}
+              data-testid="account-rename"
+              title="Ubah label / nama pelanggan"
+              className="shrink-0 p-2 rounded-md border border-white/10 text-slate-400 hover:text-pink-400 hover:border-pink-500/40 transition-colors"
+            >
+              <PencilSimple size={14} />
+            </button>
+          </div>
           <button
             onClick={addAcc}
             disabled={accounts.length >= accInfo.limit}

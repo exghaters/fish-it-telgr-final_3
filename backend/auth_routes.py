@@ -1,6 +1,7 @@
 """Auth endpoints: register, login, logout, me."""
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -87,6 +88,10 @@ async def _clear_failures(identifier: str) -> None:
 
 @router.post("/register", response_model=TokenResponse)
 async def register(body: RegisterInput, response: Response):
+    if os.environ.get("ALLOW_PUBLIC_REGISTRATION", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Pendaftaran publik dinonaktifkan. Hubungi admin untuk dibuatkan akun.")
     existing = await db.users.find_one({"email": body.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email sudah terdaftar")

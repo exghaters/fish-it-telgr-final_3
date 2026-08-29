@@ -66,6 +66,10 @@ class AccountCreateInput(BaseModel):
     label: str = Field(default="Akun", max_length=40)
 
 
+class AccountUpdateInput(BaseModel):
+    label: str = Field(min_length=1, max_length=40)
+
+
 # ---------- Telegram Session ----------
 class TelegramSessionMeta(BaseModel):
     """Public metadata about a user's Telegram MTProto session (no secrets)."""

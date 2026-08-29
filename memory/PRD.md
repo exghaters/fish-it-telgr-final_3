@@ -88,3 +88,11 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Hardening: login brute-force lockout (5 fails/ip:email => 15min, 429) via login_attempts collection; JWT TTL 7 days (cookie max_age matched); token removed from login/register response body (httpOnly cookie only); register password min_length raised 6 -> 8.
 - CORS explicit-origin fix DEFERRED until final deploy domain is known.
 - Test suite updated (admin pwd from env, token read from login cookie): 139/139 pytest pass. testing_agent iteration_13: backend 17/17, frontend critical flows 100%.
+
+## Operator/Joki Model Adjustments — 2026-06
+- Public self-registration DISABLED: /register route + page removed, Login has no signup link. Backend register() returns 403 unless env ALLOW_PUBLIC_REGISTRATION=="true" (set true in preview .env for tests; leave OFF in production).
+- Admin creates operator logins: POST /api/admin/users (admin-only, default role=user plan=elite). UI: "Buat Akun Operator" form on Admin page (data-testid create-user-card/new-user-email/new-user-password/create-user-submit).
+- Per-account label (customer name): create prompts for label; rename via pencil button (data-testid account-rename) -> PATCH /api/telegram/accounts/{id}. Telegram accounts stay isolated per operator.
+- Operators (elite) account cap raised 3 -> 100; list_accounts cap raised to 1000. Sidebar Pricing/Paket nav hidden (Admin kept).
+- BUGFIX: ensure_default_account race (concurrent first-load created duplicate default accounts) -> deterministic id 'default-{user_id}' + unique-index guard; verified 24 concurrent requests => 1 account.
+- Tests updated for new limits; 167/167 pytest pass. testing_agent iteration_14: frontend 100% critical flows, backend 100%.

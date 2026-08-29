@@ -112,7 +112,7 @@ export default function Landing() {
             <Link to="/login" data-testid="nav-login-btn">
               <Button variant="ghost" className="text-slate-300 hover:text-white">Masuk</Button>
             </Link>
-            <Link to="/register" data-testid="nav-register-btn">
+            <Link to="/login" data-testid="nav-register-btn">
               <Button className="bg-pink-500 hover:bg-pink-600 text-black font-semibold rounded-full px-5">
                 Mulai Gratis <ArrowRight size={16} className="ml-1" />
               </Button>
@@ -140,7 +140,7 @@ export default function Landing() {
               saat verifikasi muncul.
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
-              <Link to="/register" data-testid="hero-cta-register">
+              <Link to="/login" data-testid="hero-cta-register">
                 <Button className="bg-pink-500 hover:bg-pink-600 text-black font-bold rounded-full px-8 py-6 text-base glow-pink">
                   Mulai Automation Gratis <ArrowRight size={18} className="ml-2" />
                 </Button>
@@ -299,7 +299,7 @@ export default function Landing() {
                   </li>
                 ))}
               </ul>
-              <Link to="/register" data-testid={`pricing-cta-${t.name.toLowerCase()}`}>
+              <Link to="/login" data-testid={`pricing-cta-${t.name.toLowerCase()}`}>
                 <Button
                   className={`w-full rounded-full ${
                     t.highlight

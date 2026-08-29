@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -13,6 +12,7 @@ from dotenv import load_dotenv
 from fastapi import Cookie, Depends, Header, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
+from pymongo.errors import DuplicateKeyError
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -110,7 +110,7 @@ PLAN_LIMITS = {
     "free":  {"accounts": 1, "log_days": 7,  "auto_verify": False, "vip_multi": False, "label": "Starter"},
     "basic": {"accounts": 1, "log_days": 7,  "auto_verify": False, "vip_multi": False, "label": "Starter"},
     "pro":   {"accounts": 1, "log_days": 30, "auto_verify": True,  "vip_multi": True,  "label": "Pro"},
-    "elite": {"accounts": 3, "log_days": 90, "auto_verify": True,  "vip_multi": True,  "label": "Elite"},
+    "elite": {"accounts": 100, "log_days": 90, "auto_verify": True,  "vip_multi": True,  "label": "Elite"},
 }
 
 
@@ -119,15 +119,21 @@ def plan_limits(plan: Optional[str]) -> dict:
 
 
 async def ensure_default_account(user_id: str) -> str:
-    doc = await db.telegram_accounts.find_one({"user_id": user_id})
+    doc = await db.telegram_accounts.find_one({"user_id": user_id}, sort=[("created_at", 1)])
     if doc:
         return doc["id"]
-    aid = str(uuid.uuid4())
-    await db.telegram_accounts.insert_one({
-        "id": aid, "user_id": user_id, "label": "Akun 1",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    return aid
+    # Deterministic id so concurrent first-load requests can't create duplicates:
+    # the unique index on `id` lets only one insert win; the rest are ignored.
+    aid = f"default-{user_id}"
+    try:
+        await db.telegram_accounts.insert_one({
+            "id": aid, "user_id": user_id, "label": "Akun 1",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except DuplicateKeyError:
+        pass
+    doc = await db.telegram_accounts.find_one({"user_id": user_id}, sort=[("created_at", 1)])
+    return doc["id"]
 
 
 async def get_account_key(

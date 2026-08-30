@@ -212,16 +212,18 @@ class AutomationRunner:
         ):
             if not (self._last_group_boost_at and
                     (now - self._last_group_boost_at).total_seconds() < cooldown):
-                dest = cfg.group_username
+                # User wants the boost sent to the configured Fish It BOT (DM),
+                # not the group, when "PERAHU SIAP BERANGKAT" appears.
+                dest = cfg.bot_username or cfg.group_username
                 if dest:
                     self._last_group_boost_at = now
                     ut = ut or await self._get_client()
                     try:
-                        await ut.send_command(dest, cfg.group_boost_command)
+                        await ut.send_command(dest, cfg.boost_command)
                         await self._event("message-out", "info",
-                                          f"Sent {cfg.group_boost_command} → {dest} (boost grup)")
+                                          f"Sent {cfg.boost_command} → {dest} (boost perahu)")
                     except Exception as exc:
-                        await self._event("error", "warn", f"Boost grup gagal: {exc}")
+                        await self._event("error", "warn", f"Boost gagal: {exc}")
 
     def _group_open_command(self, cfg: AutomationConfig) -> str:
         """Build /open_mancing@<bot> using the configured Bot Fish It username."""
@@ -272,6 +274,18 @@ class AutomationRunner:
         ut = await self._get_client()
         group_id = await ut.resolve_chat_id(cfg.group_username) if cfg.group_username else None
         bot_id = await ut.resolve_chat_id(cfg.bot_username) if cfg.bot_username else None
+        # Only these bot chats may trigger verification (avoids scheduled-message /
+        # unrelated bots being read as "verifikasi diperlukan").
+        allowed_bot_ids = set()
+        if bot_id:
+            allowed_bot_ids.add(bot_id)
+        for _uname in (getattr(cfg, "extra_allowed_chats", None) or []):
+            try:
+                _cid = await ut.resolve_chat_id(_uname)
+                if _cid:
+                    allowed_bot_ids.add(_cid)
+            except Exception:
+                pass
         compiled = [(r["name"], re.compile(r["pattern"], re.IGNORECASE), r.get("chat", "any"))
                     for r in rules if r.get("pattern")]
         deadline = _now() + timedelta(seconds=timeout)
@@ -296,6 +310,7 @@ class AutomationRunner:
             if (
                 cfg.verification_pattern
                 and isinstance(chat_id, int) and chat_id > 0
+                and (not allowed_bot_ids or chat_id in allowed_bot_ids)
                 and re.search(cfg.verification_pattern, text, re.IGNORECASE)
                 and not self._in_verification
                 and not self.pause_flag.is_set()
@@ -441,6 +456,7 @@ class AutomationRunner:
         while _now() < deadline and not self.stop_flag.is_set():
             if self.pause_flag.is_set():
                 await self._wait_for_pause()
+                await self._resend_pending_after_verify()
                 continue
             try:
                 item = await asyncio.wait_for(ut.event_queue.get(), timeout=1.0)
@@ -461,10 +477,11 @@ class AutomationRunner:
                           "chat_id": chat_id,
                           "edited": item.get("type") == "edited"})
             await self._maybe_boost(cfg, item)
-            # Verification only triggers from bot DM (positive chat_id)
+            # Verification only triggers from the target Fish It bot DM
             if (
                 cfg.verification_pattern
                 and isinstance(chat_id, int) and chat_id > 0
+                and from_target
                 and re.search(cfg.verification_pattern, text, re.IGNORECASE)
                 and not self._in_verification
                 and not self.pause_flag.is_set()

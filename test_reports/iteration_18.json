@@ -1,0 +1,25 @@
+{
+  "summary": "Iter18 backend-only regression for engine boost fix (PERAHU trigger now sends cfg.boost_command to cfg.bot_username DM) and VIP verify-resume (_wait_for_message now calls _resend_pending_after_verify). Ran targeted unit tests (7/7), full backend pytest suite (184/184), and a live API regression against the public URL covering admin login, elite login, /api/automation/config GET+PUT round-trip (verified new fields: boost_enabled, boost_command, group_boost_trigger_pattern, bot_username), and admin create/delete user. All green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_group_reopen_verify_resume.py",
+    "/app/backend/tests/test_iter18_api_regression.py",
+    "/app/test_reports/pytest/iter18_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "POST /api/auth/register auto-issues a session cookie for the newly created user, overwriting the caller's existing (e.g. admin) session cookie. This is a subtle DX/security gotcha for admin flows and any test/automation that uses register-on-behalf-of; consider gating the auto-login to only when there is no current session, or adding an admin-side POST /api/admin/users create endpoint that does not swap the session. Worked around in the test by re-logging as admin after register.",
+    "Emails are stored/compared lowercased server-side but responses may echo mixed case-in tests. Consider normalizing on read-path everywhere to avoid subtle bugs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter18_api_regression.py (new)"
+  ],
+  "success_rate": {"backend": "100% (184/184 suite + 4/4 API regression + 7/7 iter15 targeted)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin@fishit.app / (from /app/memory/test_credentials.md); user@fishit.app / FishIt#2026",
+  "seed_data_creation": "Created and cleaned up TEST_iter18_tmp@fishit.app during admin create/delete test; no persistent seed data left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter15 targeted tests include test_boost_perahu_sent_to_configured_bot and test_boost_skipped_when_disabled which validate the engine change without a live MTProto session. The new /app/backend/tests/test_iter18_api_regression.py is a fast (<3s) live regression that hits the public REACT_APP_BACKEND_URL; safe to re-run. Note: /api/auth/register replaces the caller's auth cookie with the new user's, so admin-flow tests must re-login after calling register (already handled).",
+  "rca of the issue": "N/A - both engine fixes (PERAHU boost dest -> cfg.bot_username with cfg.boost_command; VIP _wait_for_message re-issuing pending /mancing via _resend_pending_after_verify after pause) are covered by unit tests in test_iter15_group_reopen_verify_resume.py and pass. Live Telegram cannot be exercised in this environment as noted."
+}

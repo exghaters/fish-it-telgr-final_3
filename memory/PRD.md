@@ -103,3 +103,16 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Bug3 (account session): /telegram/status (get_meta rehydrate=True) now rehydrates the Telethon client from the stored encrypted session, so switching accounts / backend restart no longer forces a phone re-login for an already-connected account.
 - Tests: new backend/tests/test_iter15_group_reopen_verify_resume.py (5 unit tests). Full suite 172 local / 175 with testing-agent API tests. testing_agent iteration_15: backend 100%, frontend 100%, no issues.
 - NOTE: real-Telegram effects (green 'connected' after rehydrate, actual button clicks, Cloudflare verify) still require the user's real one-cycle confirmation — the test env has no live Telegram session.
+
+## Fixes batch (admin lockout, verify scoping, account delete) — 2026-06
+- Admin lockout: restored admin is_active=true; admin_routes.update_user now blocks deactivating your own account (400) and the last active admin (400). (testing_agent iter16, 179/179)
+- Verification scoping: engine only treats a message as "verifikasi diperlukan" when it comes from the configured Fish It bot(s) (bot_username + extra_allowed_chats via allowed_bot_ids in _wait_for_any; from_target gate in _wait_for_message). Stops scheduled-message/other bots from triggering verification.
+- Account delete: added sidebar trash button (data-testid=account-delete) -> DELETE /telegram/accounts/{id}; backend logs out Telethon session (client.log_out + disconnect) and deletes telegram_sessions doc + account-scoped data; blocks deleting last account. (testing_agent iter17, 182/182, frontend 100%)
+- resume_keyword already case-insensitive (dvk/Dvk/DVK). Inter-action gap tunable via cfg.vip_gap_seconds.
+- STILL NEEDS USER INPUT: exact "boost error" text/logs; what "st" should do; real-Telegram one-cycle confirmation for spam/join/verify. "2 IP" session error = Telegram invalidates a session used from 2 IPs at once (don't use the same account on phone while automation runs; re-login the account).
+
+## Boost destination + VIP verify-resume — 2026-06
+- Boost: "⛵️ PERAHU SIAP BERANGKAT" now sends cfg.boost_command to cfg.bot_username (DM) instead of the group (user wanted boost at the configured bot). Cooldown kept.
+- VIP verify-resume: _wait_for_message now calls _resend_pending_after_verify() after resume, so after manual verify the VIP flow re-issues /mancing (previously only the group flow did).
+- Tests: iter15 now 7 unit tests (incl. boost). Full suite 184/184. testing_agent iter18: backend 100%, no issues.
+- OPEN: "st" typed in bot/group triggers /open|/mancing (needs investigation — engine may react to outgoing user messages); Configuration page simplification requested (many fields -> group into Basic/Advanced) — pending.

@@ -1,0 +1,25 @@
+{
+  "summary": "Iter17: Verified new sidebar account-delete UI + backend delete flow. Backend 182/182 pytests pass (179 previous + 3 new iter17). UI: add + delete + rename + last-account-block all work with proper dialog handling; success/error toasts appear; page reloads; deleted account disappears from switcher; telegram_sessions doc for that akey is removed; DELETE for last account returns 400 with 'Minimal harus ada 1 akun' and preserves the account. No Pricing nav present. Elite login (user@fishit.app) works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter17_account_delete.py",
+    "/app/test_reports/pytest/iter17_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "delete_account correctly stops engine, logs out telethon session, and cleans configs/state/events/notifications for akey before removing the account.",
+    "Frontend deleteAcc guards accounts.length<=1 client-side and shows toast; backend also guards with 400 — defense in depth is correct.",
+    "Rename PATCH mutates local state without reload (good UX). Add/Delete reload the whole page — acceptable but slightly heavy; consider client-state refresh in a future pass."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter17_account_delete.py (new)"
+  ],
+  "success_rate": {"backend": "100% (182/182)", "frontend": "100% (add/delete/rename/last-block/no-pricing)"},
+  "test_credentials": "admin@fishit.app (from backend/.env ADMIN_PASSWORD), user@fishit.app / FishIt#2026",
+  "seed_data_creation": "Created and cleaned throwaway accounts labeled TEST_UI_Del / TEST_ren_* / TEST_new_* / TEST_sess_* / TEST_del_*; single 'Akun 1' remains for elite user (baseline preserved).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Elite user has 1 account 'Akun 1'. Backend pytest baseline is now 182. New test file: tests/test_iter17_account_delete.py. Playwright dialog handling: register page.on('dialog', handler) BEFORE click; window.prompt for add/rename, window.confirm for delete. Python Playwright does NOT support page.remove_all_listeners — use page.remove_listener(event, fn) with a stored ref, or re-attach a single handler.",
+  "rca of the issue": "Original issue: previously the sidebar switcher had only add + rename buttons, so users could not delete a leftover Telegram session/account; on re-login the old telegram_sessions doc kept getting rehydrated. Fix (already applied): (1) frontend DashboardLayout.jsx exposes a trash button data-testid=account-delete calling DELETE /telegram/accounts/{id}; (2) backend delete_account calls telegram_manager.logout(akey) which pops+log_out+disconnects the Telethon client and deletes telegram_sessions doc for user_id=akey, plus purges automation_configs/state/events/notifications for that akey, and blocks removing the last account. Verified by iter17 tests: doc removal in Mongo, 400 on last delete, 200 on non-last, UI toast + reload."
+}

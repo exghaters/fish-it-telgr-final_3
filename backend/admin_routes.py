@@ -54,10 +54,19 @@ async def create_user(body: CreateUserInput, _: dict = Depends(get_current_admin
 
 @router.put("/users/{user_id}", response_model=UserPublic)
 async def update_user(user_id: str, body: AdminUpdateUserInput,
-                      _: dict = Depends(get_current_admin)):
+                      admin: dict = Depends(get_current_admin)):
     update = {k: v for k, v in body.model_dump().items() if v is not None}
     if not update:
         raise HTTPException(400, "Nothing to update")
+    # Guard: don't let an admin lock themselves out or drop the last active admin.
+    if update.get("is_active") is False:
+        if user_id == admin["id"]:
+            raise HTTPException(400, "Tidak bisa menonaktifkan akun sendiri")
+        target = await db.users.find_one({"id": user_id}, {"_id": 0, "role": 1})
+        if target and target.get("role") == "admin":
+            active_admins = await db.users.count_documents({"role": "admin", "is_active": True})
+            if active_admins <= 1:
+                raise HTTPException(400, "Tidak bisa menonaktifkan admin aktif terakhir")
     res = await db.users.find_one_and_update(
         {"id": user_id}, {"$set": update},
         return_document=True,

@@ -1,0 +1,24 @@
+{
+  "summary": "Backend-only regression for iter16 admin-deactivation guards. Added test_iter16_admin_deactivate_guards.py (4 tests) and ran full pytest suite. Result: 179/179 passed (~180s). All 4 new tests verified: (1) admin login still works, (2) admin cannot deactivate self (400 'Tidak bisa menonaktifkan akun sendiri'), (3) last-active-admin cannot be deactivated (blocked with 400 - self-guard fires first for admin@fishit.app), (4) admin CAN deactivate a non-admin user -> that user's login is rejected 403 (dinonaktifkan), re-activate restores login. Throwaway user was deleted after test. Also code-reviewed automation_engine._wait_for_any and _wait_for_message: verification detection is correctly gated by `allowed_bot_ids` (built from bot_username + extra_allowed_chats) in _wait_for_any (line 311) and by `from_target` in _wait_for_message (line 481), so verifications will not fire on messages from unrelated bots/DMs. Engine scoping fix looks correct on code inspection; a live-Telegram behavioural test is out of scope here.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_admin_deactivate_guards.py",
+    "/app/test_reports/pytest/iter16_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "admin_routes.update_user guard order is correct: self-check first, then last-active-admin check via count_documents({role:admin,is_active:true}) <= 1. Solid.",
+    "automation_engine._wait_for_any builds allowed_bot_ids from bot_username resolved id + resolved ids of extra_allowed_chats, and verification is only triggered when chat_id in allowed_bot_ids (line 311). If allowed_bot_ids is empty (all resolves failed), the `not allowed_bot_ids or ...` short-circuit re-opens verification to ANY chat — consider logging a warning when the set ends up empty so operators know their bot_username failed to resolve.",
+    "_wait_for_message gates verification on `from_target` which is True when target_id is None. When target_id resolves to None (bot username not resolvable), verification once again fires on any chat. Same failure mode as above; a resolvable bot_username is required for the scoping fix to actually restrict scope.",
+    "backend/admin_routes.CreateUserInput allows role='admin' via API — combined with the last-admin guard, this is fine, but there's no audit log entry for admin promotions."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter16_admin_deactivate_guards.py"],
+  "success_rate": {"backend": "100% (179/179)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "admin@fishit.app + password from /app/memory/test_credentials.md; throwaway deact_probe_<hex>@fishit.app / DeactProbe12 (created and deleted within test).",
+  "seed_data_creation": "None persisted — throwaway user is deleted in test finally-block.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter16 covers admin self/last-admin deactivation guards + non-admin deactivate/reactivate round trip. Suite is at 179 tests. Engine verification scoping (bot_username + extra_allowed_chats) verified by code inspection only — behavioural test would require a real Telegram session and is not doable here. Watch out for the edge case where bot_username fails to resolve to an id: in both _wait_for_any and _wait_for_message the verification currently falls back to any chat (not target-scoped). Not blocking, but worth noting.",
+  "rca of the issue": "N/A — this was verification of a fix, not bug reproduction. Original bug (admin locked self out) is now prevented by the self-deactivation guard (HTTP 400) in admin_routes.update_user."
+}

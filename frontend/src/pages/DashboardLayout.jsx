@@ -12,6 +12,7 @@ import {
   List,
   X,
   PencilSimple,
+  Trash,
 } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth.jsx";
 import api from "@/lib/api";
@@ -94,6 +95,24 @@ export default function DashboardLayout() {
       toast.success("Label akun diperbarui");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal mengubah label");
+    }
+  };
+
+  const deleteAcc = async () => {
+    const current = accounts.find((a) => a.id === activeAcc);
+    if (!current) return;
+    if (accounts.length <= 1) {
+      toast.error("Minimal harus ada 1 akun");
+      return;
+    }
+    if (!window.confirm(`Hapus akun "${current.label}"? Session Telegram-nya akan dilogout & data akun ini dihapus.`)) return;
+    try {
+      await api.delete(`/telegram/accounts/${activeAcc}`);
+      localStorage.removeItem("fishit_account");
+      toast.success("Akun dihapus & session Telegram dilogout");
+      window.location.reload();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal menghapus akun");
     }
   };
 
@@ -184,6 +203,14 @@ export default function DashboardLayout() {
               className="shrink-0 p-2 rounded-md border border-white/10 text-slate-400 hover:text-pink-400 hover:border-pink-500/40 transition-colors"
             >
               <PencilSimple size={14} />
+            </button>
+            <button
+              onClick={deleteAcc}
+              data-testid="account-delete"
+              title="Hapus akun & logout session Telegram"
+              className="shrink-0 p-2 rounded-md border border-white/10 text-slate-400 hover:text-red-400 hover:border-red-500/40 transition-colors"
+            >
+              <Trash size={14} />
             </button>
           </div>
           <button

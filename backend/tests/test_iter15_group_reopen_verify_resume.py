@@ -94,6 +94,27 @@ def test_resend_pending_noop_when_not_paused_for_verify():
     asyncio.run(run())
 
 
+def test_boost_perahu_sent_to_configured_bot():
+    """PERAHU SIAP BERANGKAT -> /boost goes to the configured bot (not the group)."""
+    async def run():
+        ut = FakeUT()
+        r = _runner(ut)
+        cfg = _cfg(boost_enabled=True)
+        await r._maybe_boost(cfg, {"text": "⛵️ PERAHU SIAP BERANGKAT!", "chat_id": -100123})
+        assert (cfg.bot_username, cfg.boost_command) in ut.sent, ut.sent
+    asyncio.run(run())
+
+
+def test_boost_skipped_when_disabled():
+    async def run():
+        ut = FakeUT()
+        r = _runner(ut)
+        cfg = _cfg(boost_enabled=False)
+        await r._maybe_boost(cfg, {"text": "⛵️ PERAHU SIAP BERANGKAT!", "chat_id": -100123})
+        assert ut.sent == []
+    asyncio.run(run())
+
+
 def test_resend_pending_force_after_auto_verify():
     async def run():
         ut = FakeUT()

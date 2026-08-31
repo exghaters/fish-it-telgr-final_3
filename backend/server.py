@@ -37,6 +37,8 @@ async def seed_admin():
         updates = {}
         if existing.get("role") != "admin":
             updates["role"] = "admin"
+        if not existing.get("is_active", True):
+            updates["is_active"] = True  # admin can never stay deactivated
         # .env is the source of truth: rotate the hash if the password changed.
         if not verify_password(password, existing["password_hash"]):
             updates["password_hash"] = hash_password(password)

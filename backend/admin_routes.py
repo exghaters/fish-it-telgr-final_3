@@ -64,9 +64,7 @@ async def update_user(user_id: str, body: AdminUpdateUserInput,
             raise HTTPException(400, "Tidak bisa menonaktifkan akun sendiri")
         target = await db.users.find_one({"id": user_id}, {"_id": 0, "role": 1})
         if target and target.get("role") == "admin":
-            active_admins = await db.users.count_documents({"role": "admin", "is_active": True})
-            if active_admins <= 1:
-                raise HTTPException(400, "Tidak bisa menonaktifkan admin aktif terakhir")
+            raise HTTPException(400, "Akun admin tidak bisa dinonaktifkan")
     res = await db.users.find_one_and_update(
         {"id": user_id}, {"$set": update},
         return_document=True,

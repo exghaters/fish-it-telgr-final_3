@@ -708,55 +708,72 @@ class AutomationRunner:
     # ---- Group cycle ----
     async def _join_group_button(self, cfg: AutomationConfig, group: str,
                                  message_id: int) -> Optional[str]:
-        """Click 'Daftar Mancing'. Returns 'deeplink' | 'clicked' | None."""
+        """Click 'Daftar Mancing'. Returns 'deeplink' | 'clicked' | None.
+
+        Fish It usually EDITS the "PENDAFTARAN DIBUKA" message to attach the
+        join button + live countdown a beat after the text first arrives, so a
+        single immediate fetch often sees no button. We poll for up to ~16s,
+        re-scanning recent group messages until the button shows up.
+        """
         ut = await self._get_client()
-        candidates = []
-        try:
-            msg = await ut.client.get_messages(group, ids=message_id)
-            if msg:
-                candidates.append(msg)
-        except Exception as exc:
-            await self._event("error", "warn", f"Get pesan pendaftaran gagal: {exc}")
-        try:
-            async for m in ut.client.iter_messages(group, limit=5):
-                if m.id != message_id:
-                    candidates.append(m)
-        except Exception:
-            pass
-        for m in candidates:
-            if not m or not getattr(m, "buttons", None):
-                continue
-            for row in m.buttons:
-                for btn in row:
-                    btext = (getattr(btn, "text", "") or "")
-                    if cfg.join_button_text.lower() not in btext.lower():
-                        continue
-                    url = getattr(btn, "url", None)
-                    if url:
-                        dm = re.search(r"t\.me/([A-Za-z0-9_]+)\?start=([\w\-]+)", url)
-                        if dm:
-                            bot_uname, param = dm.group(1), dm.group(2)
-                            await ut.send_command(f"@{bot_uname}", f"/start {param}")
-                            # Remember so we can re-issue after a verification ("/daftar lagi")
-                            self._pending_after_verify = (f"@{bot_uname}", f"/start {param}")
-                            await self._event(
-                                "click", "info",
-                                f"Join via deep-link: /start {param} → @{bot_uname}")
-                            return "deeplink"
-                        await self._event("info", "warn",
-                                          f"Tombol join URL tidak dikenali: {url}")
-                        return None
-                    try:
-                        await m.click(text=btext)
-                        await self._event("click", "info",
-                                          f"Clicked '{btext}' di grup")
-                        return "clicked"
-                    except Exception as exc:
-                        await self._event("error", "warn", f"Klik join gagal: {exc}")
-                        return None
+        want = (cfg.join_button_text or "").strip().lower()
+        for attempt in range(8):
+            if self.stop_flag.is_set():
+                return None
+            candidates = []
+            try:
+                msg = await ut.client.get_messages(group, ids=message_id)
+                if msg:
+                    candidates.append(msg)
+            except Exception as exc:
+                if attempt == 0:
+                    await self._event("error", "warn", f"Get pesan pendaftaran gagal: {exc}")
+            try:
+                async for m in ut.client.iter_messages(group, limit=12):
+                    if m and m.id != message_id:
+                        candidates.append(m)
+            except Exception:
+                pass
+            for m in candidates:
+                if not m or not getattr(m, "buttons", None):
+                    continue
+                for row in m.buttons:
+                    for btn in row:
+                        btext = (getattr(btn, "text", "") or "").strip()
+                        if want and want not in btext.lower():
+                            continue
+                        url = getattr(btn, "url", None)
+                        if url:
+                            dm = re.search(
+                                r"t\.me/([A-Za-z0-9_]+)\?start=([\w\-=]+)", url)
+                            if not dm:
+                                dm = re.search(
+                                    r"telegram\.me/([A-Za-z0-9_]+)\?start=([\w\-=]+)", url)
+                            if not dm:
+                                dm = re.search(
+                                    r"tg://resolve\?domain=([A-Za-z0-9_]+)&start=([\w\-=]+)", url)
+                            if dm:
+                                bot_uname, param = dm.group(1), dm.group(2)
+                                await ut.send_command(f"@{bot_uname}", f"/start {param}")
+                                self._pending_after_verify = (f"@{bot_uname}", f"/start {param}")
+                                await self._event(
+                                    "click", "info",
+                                    f"Join via deep-link: /start {param} → @{bot_uname}")
+                                return "deeplink"
+                            await self._event("info", "warn",
+                                              f"Tombol join URL tidak dikenali: {url}")
+                            continue
+                        try:
+                            await m.click(text=btext)
+                            await self._event("click", "info",
+                                              f"Clicked '{btext}' di grup")
+                            return "clicked"
+                        except Exception as exc:
+                            await self._event("error", "warn", f"Klik join gagal: {exc}")
+            await asyncio.sleep(2)
         await self._event("info", "warn",
                           f"Tombol '{cfg.join_button_text}' tidak ditemukan "
-                          "di pesan pendaftaran")
+                          "di pesan pendaftaran (setelah menunggu ~16s)")
         return None
 
     async def _cycle_group(self, cfg: AutomationConfig):
@@ -810,15 +827,29 @@ class AutomationRunner:
             self.state.status = "joining"
             await self._save_state()
             method = await self._join_group_button(cfg, group, ev["message_id"])
-            if method == "clicked" and cfg.dm_confirm_command:
+            if method:
+                if method == "clicked" and cfg.dm_confirm_command:
+                    try:
+                        await ut.send_command(bot, cfg.dm_confirm_command)
+                    except Exception:
+                        pass
+                self._last_mancing_at = _now()
+                self._session_active = True
+                await self._event("info", "info",
+                                  "✅ 'Daftar Mancing' ditekan — menunggu sesi selesai")
+            else:
+                # Button never appeared/clickable: re-open so we get a fresh
+                # PENDAFTARAN with a working button on the next cycle.
+                self._session_active = False
+                self.state.status = "opening"
+                await self._save_state()
+                await self._drain_queue()
                 try:
-                    await ut.send_command(bot, cfg.dm_confirm_command)
-                except Exception:
-                    pass
-            self._last_mancing_at = _now()
-            self._session_active = True
-            await self._event("info", "info",
-                              "✅ 'Daftar Mancing' ditekan — menunggu sesi selesai")
+                    await ut.send_command(group, open_cmd)
+                    await self._event("message-out", "warn",
+                                      f"Tombol belum bisa ditekan → buka ulang {open_cmd} → {group}")
+                except Exception as exc:
+                    await self._event("error", "warn", f"Buka ulang gagal: {exc}")
 
         elif name == "waktu_habis":
             self.state.status = "opening"

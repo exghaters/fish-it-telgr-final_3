@@ -22,7 +22,7 @@ def _load_backend_url():
 BASE = _load_backend_url()
 
 ADMIN_EMAIL = "admin@fishit.app"
-ADMIN_PASSWORD = "Lpwa*PN7uCy5%wWRK@r9l%Q#"
+ADMIN_PASSWORD = "Surabaya818"
 ELITE_EMAIL = "user@fishit.app"
 ELITE_PASSWORD = "FishIt#2026"
 

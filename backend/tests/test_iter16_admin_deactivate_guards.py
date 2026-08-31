@@ -22,7 +22,7 @@ BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL")
 assert BASE_URL, "REACT_APP_BACKEND_URL missing"
 
 ADMIN_EMAIL = "admin@fishit.app"
-ADMIN_PW = "Lpwa*PN7uCy5%wWRK@r9l%Q#"
+ADMIN_PW = "Surabaya818"
 
 
 def _login(session: requests.Session, email: str, pw: str):

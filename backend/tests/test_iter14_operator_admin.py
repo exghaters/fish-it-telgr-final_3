@@ -34,7 +34,7 @@ BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL")
 assert BASE_URL, "REACT_APP_BACKEND_URL missing"
 
 ADMIN_EMAIL = "admin@fishit.app"
-ADMIN_PASSWORD = "Lpwa*PN7uCy5%wWRK@r9l%Q#"
+ADMIN_PASSWORD = "Surabaya818"
 USER_EMAIL = "user@fishit.app"
 USER_PASSWORD = "FishIt#2026"
 

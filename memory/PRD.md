@@ -117,7 +117,14 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Tests: iter15 now 7 unit tests (incl. boost). Full suite 184/184. testing_agent iter18: backend 100%, no issues.
 - OPEN: "st" typed in bot/group triggers /open|/mancing (needs investigation — engine may react to outgoing user messages); Configuration page simplification requested (many fields -> group into Basic/Advanced) — pending.
 
-## Bugfix P0: tombol Daftar Mancing tidak ditekan di grup RAMAI (2026-06, iter22)
+## Fix: register sekali per ronde + cleanup DB (2026-06, iter23)
+- User konfirmasi alur benar (screenshot): klik "Daftar Mancing" = kirim /start daftar2_<idgrup> ke bot dari deep-link tombol (mis. @fish_it_vip3_bot) → bot balas "Pendaftaran Berhasil". Sudah sesuai fix iter22.
+- BUG baru dari screenshot: /start terkirim berulang ("Sudah Terdaftar!" berkali-kali) karena pesan "PENDAFTARAN DIBUKA" meng-edit countdown tiap detik → memicu klik ulang.
+- FIX: flag _joined_round di AutomationRunner. _cycle_group 'pendaftaran' skip jika sudah join ronde ini; di-set True setelah join sukses; di-reset saat waktu_habis / cancelled / session_done.
+- CLEANUP DB: hapus 510 akun auto-test (pattern test_/regtest_/tg_/iter2_/empty_/uitest_/tgstat_) + cascade data (telegram_sessions 42, automation_configs 212, automation_state 41, events 168). Penyebab: >500 user test membuat admin@fishit.app hilang dari GET /admin/users (limit 500 sort desc) → 5 test admin gagal. Setelah cleanup admin terlihat lagi. Disimpan: 3 admin (admin@, elite@, adolphineeee@) + user@fishit.app (seed test) + test1787811114@ + rufus@gmail + aada@gmail.
+- Tests: test_iter23_register_once.py (3). Full suite 202 passed. testing_agent iteration_23: backend 100%, admin visible, 0 issue.
+
+
 - BUKTI dari DB Activity Log akun "Rick" (@GCBLACKPEARL, grup VIP): 14:15:34 PENDAFTARAN DIBUKA → 14:15:54 "Tombol Daftar Mancing tidak ditemukan (~16s)" → reopen. Log dibanjiri pesan "Sisa waktu"/leaderboard pemain lain.
 - ROOT CAUSE: (1) tombol join = URL DEEP-LINK (t.me/fish_it_vip_bot?start=daftar2_-100...) yang di grup ramai terdorong keluar dari window scan kecil (limit=12); (2) SEMUA pesan grup ditulis ke Activity Log/DB → banjir + membebani event loop.
 - FIX _join_group_button: polling ~20s, scan iter_messages(limit=50), kenali join via start-deeplink yang menuju cfg.bot_username ATAU label mengandung daftar/mancing → kirim /start <param> ke bot + simpan sebagai _pending_after_verify (dikirim ulang setelah verifikasi). Deep-link ke bot lain (iklan) diabaikan.

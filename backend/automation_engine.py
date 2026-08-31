@@ -77,6 +77,7 @@ class AutomationRunner:
         self._filter_key: Optional[str] = None
         self._resume_handler = None
         self._group_kickstarted = False
+        self._joined_round = False   # already registered for the current round
         # Command to re-issue after a verification completes (deeplink /start or /mancing)
         self._pending_after_verify: Optional[tuple] = None
         self._paused_for_verify = False
@@ -99,6 +100,7 @@ class AutomationRunner:
         self._session_active = False
         self._filter_key = None
         self._group_kickstarted = False
+        self._joined_round = False
         await self._save_state()
         await self._event("start", "info", "Automation dimulai")
         self.task = asyncio.create_task(self._run_forever())
@@ -846,6 +848,11 @@ class AutomationRunner:
         name = ev.get("_matched")
 
         if name == "pendaftaran":
+            if self._joined_round:
+                # Already registered this round. The "PENDAFTARAN DIBUKA" message
+                # keeps editing its countdown (60→59→…) which re-fires this event;
+                # ignore it so we don't spam /start ("Sudah Terdaftar!" berulang).
+                return
             self.state.status = "joining"
             await self._save_state()
             method = await self._join_group_button(cfg, group, ev["message_id"])
@@ -855,6 +862,7 @@ class AutomationRunner:
                         await ut.send_command(bot, cfg.dm_confirm_command)
                     except Exception:
                         pass
+                self._joined_round = True
                 self._last_mancing_at = _now()
                 self._session_active = True
                 await self._event("info", "info",
@@ -874,6 +882,7 @@ class AutomationRunner:
                     await self._event("error", "warn", f"Buka ulang gagal: {exc}")
 
         elif name == "waktu_habis":
+            self._joined_round = False
             self.state.status = "opening"
             await self._save_state()
             await self._drain_queue()
@@ -883,6 +892,7 @@ class AutomationRunner:
 
         elif name == "cancelled":
             # "❌ PENDAFTARAN DIBATALKAN / Tidak ada peserta" → buka ulang otomatis
+            self._joined_round = False
             self.state.status = "opening"
             await self._save_state()
             await asyncio.sleep(3)  # jeda singkat agar tidak spam
@@ -892,6 +902,7 @@ class AutomationRunner:
                               f"PENDAFTARAN DIBATALKAN → buka ulang {open_cmd} → {group}")
 
         elif name == "session_done":
+            self._joined_round = False
             self._session_active = False
             await self._process_session_result(bot, cfg, ev)
 

@@ -288,6 +288,16 @@ class AutomationRunner:
                 pass
         compiled = [(r["name"], re.compile(r["pattern"], re.IGNORECASE), r.get("chat", "any"))
                     for r in rules if r.get("pattern")]
+        # Only log "interesting" messages to keep the Activity Log (and DB) from
+        # being flooded by a busy group's live leaderboard / member chatter.
+        _log_pats = [r["pattern"] for r in rules if r.get("pattern")]
+        for _p in (cfg.verification_pattern, cfg.registration_success_pattern,
+                   getattr(cfg, "boost_trigger_pattern", ""),
+                   getattr(cfg, "group_boost_trigger_pattern", "")):
+            if _p:
+                _log_pats.append(_p)
+        interesting = (re.compile("|".join(f"(?:{p})" for p in _log_pats), re.IGNORECASE)
+                       if _log_pats else None)
         deadline = _now() + timedelta(seconds=timeout)
         while _now() < deadline and not self.stop_flag.is_set():
             if self.pause_flag.is_set():
@@ -303,9 +313,12 @@ class AutomationRunner:
             text = (item.get("text") or "").strip()
             chat_id = item.get("chat_id")
             if text:
-                await self._event("message-in", "info",
-                                  f"[{self._chat_label(chat_id)}] {text[:280]}",
-                                  meta={"message_id": item.get("message_id"), "chat_id": chat_id})
+                loggable = ((bot_id is not None and chat_id == bot_id)
+                            or (interesting is not None and interesting.search(text)))
+                if loggable:
+                    await self._event("message-in", "info",
+                                      f"[{self._chat_label(chat_id)}] {text[:280]}",
+                                      meta={"message_id": item.get("message_id"), "chat_id": chat_id})
             await self._maybe_boost(cfg, item)
             if (
                 cfg.verification_pattern
@@ -710,14 +723,27 @@ class AutomationRunner:
                                  message_id: int) -> Optional[str]:
         """Click 'Daftar Mancing'. Returns 'deeplink' | 'clicked' | None.
 
-        Fish It usually EDITS the "PENDAFTARAN DIBUKA" message to attach the
-        join button + live countdown a beat after the text first arrives, so a
-        single immediate fetch often sees no button. We poll for up to ~16s,
-        re-scanning recent group messages until the button shows up.
+        The join button is usually a URL DEEP-LINK button
+        (t.me/<bot>?start=daftar...) attached to / posted right after the
+        "PENDAFTARAN DIBUKA" message. In busy VIP groups many other messages
+        arrive in between, so we poll for ~20s and scan a WIDE window of recent
+        messages, recognising the join button by its start-deeplink to the
+        configured bot (robust against emoji/spacing in the label).
         """
         ut = await self._get_client()
         want = (cfg.join_button_text or "").strip().lower()
-        for attempt in range(8):
+        bot_cfg = (cfg.bot_username or "").lstrip("@").lower()
+
+        def _extract_start(url):
+            for rx in (r"t\.me/([A-Za-z0-9_]+)\?start=([\w\-=.]+)",
+                       r"telegram\.me/([A-Za-z0-9_]+)\?start=([\w\-=.]+)",
+                       r"tg://resolve\?domain=([A-Za-z0-9_]+)&start=([\w\-=.]+)"):
+                dm = re.search(rx, url or "")
+                if dm:
+                    return dm.group(1), dm.group(2)
+            return None
+
+        for attempt in range(10):
             if self.stop_flag.is_set():
                 return None
             candidates = []
@@ -729,7 +755,7 @@ class AutomationRunner:
                 if attempt == 0:
                     await self._event("error", "warn", f"Get pesan pendaftaran gagal: {exc}")
             try:
-                async for m in ut.client.iter_messages(group, limit=12):
+                async for m in ut.client.iter_messages(group, limit=50):
                     if m and m.id != message_id:
                         candidates.append(m)
             except Exception:
@@ -740,28 +766,24 @@ class AutomationRunner:
                 for row in m.buttons:
                     for btn in row:
                         btext = (getattr(btn, "text", "") or "").strip()
-                        if want and want not in btext.lower():
-                            continue
+                        btl = btext.lower()
                         url = getattr(btn, "url", None)
-                        if url:
-                            dm = re.search(
-                                r"t\.me/([A-Za-z0-9_]+)\?start=([\w\-=]+)", url)
-                            if not dm:
-                                dm = re.search(
-                                    r"telegram\.me/([A-Za-z0-9_]+)\?start=([\w\-=]+)", url)
-                            if not dm:
-                                dm = re.search(
-                                    r"tg://resolve\?domain=([A-Za-z0-9_]+)&start=([\w\-=]+)", url)
-                            if dm:
-                                bot_uname, param = dm.group(1), dm.group(2)
-                                await ut.send_command(f"@{bot_uname}", f"/start {param}")
-                                self._pending_after_verify = (f"@{bot_uname}", f"/start {param}")
-                                await self._event(
-                                    "click", "info",
-                                    f"Join via deep-link: /start {param} → @{bot_uname}")
-                                return "deeplink"
-                            await self._event("info", "warn",
-                                              f"Tombol join URL tidak dikenali: {url}")
+                        start = _extract_start(url) if url else None
+                        text_hit = ((want and want in btl)
+                                    or "daftar" in btl or "mancing" in btl)
+                        if start:
+                            bot_uname, param = start
+                            # Only follow a join deep-link that targets our bot
+                            # (or whose label clearly says Daftar/Mancing).
+                            if not (text_hit or bot_uname.lower() == bot_cfg):
+                                continue
+                            await ut.send_command(f"@{bot_uname}", f"/start {param}")
+                            self._pending_after_verify = (f"@{bot_uname}", f"/start {param}")
+                            await self._event(
+                                "click", "info",
+                                f"Join via deep-link: /start {param} → @{bot_uname}")
+                            return "deeplink"
+                        if not text_hit:
                             continue
                         try:
                             await m.click(text=btext)
@@ -773,7 +795,7 @@ class AutomationRunner:
             await asyncio.sleep(2)
         await self._event("info", "warn",
                           f"Tombol '{cfg.join_button_text}' tidak ditemukan "
-                          "di pesan pendaftaran (setelah menunggu ~16s)")
+                          "(grup ramai / tombol belum muncul setelah ~20s)")
         return None
 
     async def _cycle_group(self, cfg: AutomationConfig):

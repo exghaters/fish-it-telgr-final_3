@@ -1,0 +1,25 @@
+{
+  "summary": "Backend-only regression + targeted unit tests for iter22 busy-group join fix. Cleared login_attempts, ran full pytest suite: 200 passed, 1 skipped, 0 failed in ~87s. Confirmed tests/test_iter22_busy_group_join.py (3 tests: buried deeplink found, deeplink-by-URL-target recognized, unrelated bot deeplink ignored) all pass. tests/test_iter20_join_button_retry.py (2) and tests/test_iter5_boost_filter.py (12) also pass. /api/health returns 200 (engine changes did not break startup). Known parallel flakes (iter8 plan-limit, iter6 non-admin) passed cleanly under -n 2 this run.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_busy_group_join.py",
+    "/app/backend/tests/test_iter20_join_button_retry.py",
+    "/app/backend/tests/test_iter5_boost_filter.py",
+    "/app/test_reports/pytest/iter22_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "automation_engine._join_group_button now polls up to ~20s over iter_messages(limit=50) with deep-link + bot_username matching — correct approach to solve VIP flood scenario.",
+    "_wait_for_any message-in logging throttle only writes DB rows for the configured bot chat or messages matching known state patterns; boost/verification/matching code still runs on raw text so no logic loss.",
+    "Consider adding an operational metric/log-line for 'noise messages skipped' to help future debugging without re-flooding the DB."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin@fishit.app / user@fishit.app FishIt#2026 (from /app/memory/test_credentials.md, not exercised — pure unit+regression run)",
+  "seed_data_creation": "None. Only cleared db.login_attempts as instructed to avoid brute-force lockout during parallel run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter22 busy-group join fix verified via unit tests only (no live Telegram). Full suite green at 200/1skip/0fail. If future runs show flaky iter8 plan-limit or iter6 non-admin under -n 2, clear db.login_attempts and re-run the node with -n 0.",
+  "rca of the issue": "Real bug: in high-traffic VIP group @GCBLACKPEARL, the join button is a URL deep-link (https://t.me/fish_it_vip_bot?start=daftar2_...) pushed past the 12-message scan window by leaderboard spam. Additionally, every group message was logged to activity DB, saturating the event loop. Fix (verified by tests): (1) _join_group_button polls ~20s and scans 50 messages, recognizing join by deep-link targeting cfg.bot_username or label containing daftar/mancing; sends /start <param> and stores as _pending_after_verify; (2) _wait_for_any only logs message-in events for configured bot chat or known state patterns (pendaftaran/cancelled/waktu_habis/session/inventory/verification/registration/boost)."
+}

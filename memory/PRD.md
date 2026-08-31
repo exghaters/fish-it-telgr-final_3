@@ -117,7 +117,16 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Tests: iter15 now 7 unit tests (incl. boost). Full suite 184/184. testing_agent iter18: backend 100%, no issues.
 - OPEN: "st" typed in bot/group triggers /open|/mancing (needs investigation — engine may react to outgoing user messages); Configuration page simplification requested (many fields -> group into Basic/Advanced) — pending.
 
-## Feature: edit konfigurasi otomatis STOP automation akun itu (2026-06, iter21)
+## Bugfix P0: tombol Daftar Mancing tidak ditekan di grup RAMAI (2026-06, iter22)
+- BUKTI dari DB Activity Log akun "Rick" (@GCBLACKPEARL, grup VIP): 14:15:34 PENDAFTARAN DIBUKA → 14:15:54 "Tombol Daftar Mancing tidak ditemukan (~16s)" → reopen. Log dibanjiri pesan "Sisa waktu"/leaderboard pemain lain.
+- ROOT CAUSE: (1) tombol join = URL DEEP-LINK (t.me/fish_it_vip_bot?start=daftar2_-100...) yang di grup ramai terdorong keluar dari window scan kecil (limit=12); (2) SEMUA pesan grup ditulis ke Activity Log/DB → banjir + membebani event loop.
+- FIX _join_group_button: polling ~20s, scan iter_messages(limit=50), kenali join via start-deeplink yang menuju cfg.bot_username ATAU label mengandung daftar/mancing → kirim /start <param> ke bot + simpan sebagai _pending_after_verify (dikirim ulang setelah verifikasi). Deep-link ke bot lain (iklan) diabaikan.
+- FIX _wait_for_any: hanya log message-in untuk chat bot ATAU pesan yang match pola (pendaftaran/cancelled/waktu_habis/session/inventory/verifikasi/registration/boost). Noise grup tidak lagi ditulis ke DB. Logika matching/boost/verifikasi tetap jalan penuh pada raw text.
+- CATATAN: setelah klik deep-link, bot bisa minta VERIFIKASI (screenshot user) → alur verify pause/manual/resume yang sudah ada menangani ini; _pending_after_verify di-resend setelah resume.
+- Tests: test_iter22_busy_group_join.py (3). Full suite 200 passed. testing_agent iteration_22: backend 100%, 0 issue.
+- MASIH PERLU KONFIRMASI USER di grup nyata (klik deep-link → verifikasi → mancing).
+
+
 - PUT /api/automation/config sekarang selalu memaksa enabled=false + automation_engine.stop(akey) SEBELUM simpan → automation tidak pernah jalan dengan config yang sedang diedit, dan tetap STOP setelah simpan (tanpa auto-start). Scoped ke akey (get_account_key) → hanya akun yang dipilih yang berhenti, akun lain tetap jalan.
 - Frontend Configuration.jsx: saat halaman dibuka & config.enabled true → POST /automation/stop + toast; save() kirim enabled:false + toast "Automation dalam kondisi STOP — tekan Start". Banner peringatan amber (data-testid=config-edit-warning) selalu tampil.
 - Tests: test_iter21_config_edit_stops.py (force enabled=false via API + isolasi stop hanya akun target). Full suite 197 passed. testing_agent iteration_21: backend 100%, frontend 100%, 0 issue.

@@ -92,6 +92,8 @@ async def delete_user(user_id: str, admin: dict = Depends(get_current_admin)):
     target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not target:
         raise HTTPException(404, "User not found")
+    if target.get("role") == "admin":
+        raise HTTPException(400, "Akun admin tidak bisa dihapus")
     await db.users.delete_one({"id": user_id})
     # Cascade delete all user-scoped data (supports both "uid" and "uid:account" keys).
     scope = {"$or": [{"user_id": user_id},

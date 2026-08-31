@@ -50,6 +50,7 @@ function App() {
             }
           >
             <Route index element={<Status />} />
+            <Route path="status" element={<Status />} />
             <Route path="telegram" element={<TelegramSetup />} />
             <Route path="config" element={<Configuration />} />
             <Route path="activity" element={<Activity />} />

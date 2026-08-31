@@ -23,6 +23,7 @@ export default function Configuration() {
   const vipMulti = VIP_MULTI_PLANS.includes((user?.plan || "free").toLowerCase());
   const [cfg, setCfg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
 
   useEffect(() => {
     api.get("/automation/config").then((r) => setCfg(r.data));
@@ -44,6 +45,17 @@ export default function Configuration() {
 
   if (!cfg) return <div className="text-slate-500">Memuat...</div>;
 
+  const resetConfig = async () => {
+    if (!window.confirm("Reset semua pengaturan ke rekomendasi default?")) return;
+    try {
+      const r = await api.post("/automation/config/reset");
+      setCfg(r.data);
+      toast.success("Direset ke pengaturan rekomendasi");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal reset");
+    }
+  };
+
   return (
     <div className="space-y-8" data-testid="config-page">
       <div className="flex items-start justify-between flex-wrap gap-4">
@@ -55,15 +67,29 @@ export default function Configuration() {
             <span className="text-white"> @fish_it_bot</span>.
           </p>
         </div>
-        <Button
-          onClick={save}
-          disabled={busy}
-          data-testid="save-config"
-          className="bg-pink-500 hover:bg-pink-600 text-black font-bold rounded-md glow-pink"
-        >
-          <FloppyDisk size={16} className="mr-2" />
-          {busy ? "Menyimpan..." : "Simpan"}
-        </Button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <Switch checked={advanced} onCheckedChange={setAdvanced} data-testid="advanced-mode-toggle" />
+            Mode Lanjutan
+          </label>
+          <Button
+            onClick={resetConfig}
+            variant="outline"
+            data-testid="reset-config"
+            className="rounded-md border-white/15 text-slate-300 hover:text-pink-400"
+          >
+            Reset ke rekomendasi
+          </Button>
+          <Button
+            onClick={save}
+            disabled={busy}
+            data-testid="save-config"
+            className="bg-pink-500 hover:bg-pink-600 text-black font-bold rounded-md glow-pink"
+          >
+            <FloppyDisk size={16} className="mr-2" />
+            {busy ? "Menyimpan..." : "Simpan"}
+          </Button>
+        </div>
       </div>
 
       <Section title="Target & Mode" icon={<Sliders size={18} />}>
@@ -101,6 +127,7 @@ export default function Configuration() {
         </div>
       </Section>
 
+      {advanced && (<>
       <Section title="Perintah Bot">
         <div className="grid md:grid-cols-2 gap-4">
           <Field label="Perintah Buka Mancing (DM/VIP)">
@@ -309,6 +336,8 @@ export default function Configuration() {
         </div>
       </Section>
 
+      </>)}
+
       <Section title="Filter Chat & Boost">
         <div className="grid md:grid-cols-2 gap-4">
           <Field
@@ -393,6 +422,7 @@ export default function Configuration() {
         </div>
       </Section>
 
+      {advanced && (<>
       <Section title="Proteksi Ikan Langka (sebelum Jual)">
         <p className="text-xs text-slate-500 mb-4">
           Sebelum <span className="text-white font-mono">/jual semua</span>, engine buka
@@ -482,6 +512,8 @@ export default function Configuration() {
           </Field>
         </div>
       </Section>
+
+      </>)}
 
       <Section title="Auto-Start">
         <div className="flex items-center gap-3">

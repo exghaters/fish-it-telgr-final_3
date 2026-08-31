@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from telethon import TelegramClient, events
@@ -22,6 +25,21 @@ from deps import db, fernet
 from models import utcnow_iso
 
 log = logging.getLogger("telegram_manager")
+
+# --- Cross-process session ownership lease ---------------------------------
+# Each backend process gets a unique instance id. A Telegram session (identified
+# by its composite key user_id:account_id) may only be held live by ONE process
+# at a time. This prevents the same auth key being connected from two IPs
+# simultaneously (Telegram error: "authorization key was used under two
+# different IP addresses simultaneously" / AUTH_KEY_DUPLICATED) when the app is
+# scaled to multiple uvicorn workers/containers or during hot-reload overlap.
+INSTANCE_ID = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+LEASE_TTL_SECONDS = 60          # a lease is stale (take-over allowed) after this
+LEASE_HEARTBEAT_SECONDS = 20    # refresh interval while a client is live
+
+
+class SessionLeaseUnavailable(RuntimeError):
+    """Raised when another live process/worker owns this Telegram session."""
 
 
 class UserTelegram:
@@ -310,16 +328,76 @@ class UserTelegram:
 
 
 class TelegramManager:
-    """Global registry of per-user Telethon clients."""
+    """Global registry of per-user Telethon clients (one live client per akey).
+
+    A MongoDB lease (telegram_locks) guarantees that across multiple processes /
+    uvicorn workers / containers only ONE process ever holds a live client for a
+    given session key at a time.
+    """
 
     def __init__(self):
         self.users: dict[str, UserTelegram] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._heartbeat_task: Optional[asyncio.Task] = None
 
     def _lock(self, uid: str) -> asyncio.Lock:
         if uid not in self._locks:
             self._locks[uid] = asyncio.Lock()
         return self._locks[uid]
+
+    # ---- Cross-process ownership lease ----
+    async def _acquire_lease(self, akey: str) -> bool:
+        """Atomically claim (or refresh) ownership of a session key.
+
+        Succeeds if: no lease exists, WE already own it, or the current lease is
+        stale (owner process died without releasing). Fails if another process
+        holds a fresh lease.
+        """
+        now = datetime.now(timezone.utc)
+        stale_before = (now - timedelta(seconds=LEASE_TTL_SECONDS)).isoformat()
+        now_iso = now.isoformat()
+        res = await db.telegram_locks.find_one_and_update(
+            {"_id": akey,
+             "$or": [{"owner": INSTANCE_ID}, {"heartbeat": {"$lt": stale_before}}]},
+            {"$set": {"owner": INSTANCE_ID, "heartbeat": now_iso}},
+        )
+        if res is not None:
+            return True
+        # No matching doc: either it doesn't exist (we can insert) or a live
+        # foreign owner holds it (insert will collide on the unique _id).
+        try:
+            await db.telegram_locks.insert_one(
+                {"_id": akey, "owner": INSTANCE_ID, "heartbeat": now_iso})
+            return True
+        except Exception:
+            return False
+
+    async def _refresh_lease(self, akey: str):
+        await db.telegram_locks.update_one(
+            {"_id": akey, "owner": INSTANCE_ID},
+            {"$set": {"heartbeat": datetime.now(timezone.utc).isoformat()}})
+
+    async def _release_lease(self, akey: str):
+        try:
+            await db.telegram_locks.delete_one({"_id": akey, "owner": INSTANCE_ID})
+        except Exception:
+            pass
+
+    async def _heartbeat_loop(self):
+        while True:
+            try:
+                await asyncio.sleep(LEASE_HEARTBEAT_SECONDS)
+                for akey, ut in list(self.users.items()):
+                    if ut.client and ut.client.is_connected():
+                        await self._refresh_lease(akey)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                log.warning("lease heartbeat error: %s", exc)
+
+    def start_heartbeat(self):
+        if self._heartbeat_task is None or self._heartbeat_task.done():
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def get_or_create(
         self, user_id: str, api_id: Optional[int] = None, api_hash: Optional[str] = None
@@ -344,13 +422,25 @@ class TelegramManager:
             if not eff_api_id or not eff_api_hash:
                 raise ValueError("API ID / API Hash belum di-set")
 
+            # Claim exclusive ownership BEFORE opening any MTProto connection so
+            # the same auth key can never be live in two processes at once.
+            if not await self._acquire_lease(user_id):
+                raise SessionLeaseUnavailable(
+                    "Sesi Telegram ini sedang aktif di proses/perangkat lain. "
+                    "Tunggu beberapa detik lalu coba lagi.")
+
             ut = UserTelegram(user_id, int(eff_api_id), eff_api_hash, session_str)
             ut.phone = doc.get("phone") if doc else None
             ut.display_name = doc.get("display_name") if doc else None
-            await ut.connect()
-            if await ut.is_authorized():
-                ut._install_default_handler()
+            try:
+                await ut.connect()
+                if await ut.is_authorized():
+                    ut._install_default_handler()
+            except Exception:
+                await self._release_lease(user_id)
+                raise
             self.users[user_id] = ut
+            self.start_heartbeat()
             return ut
 
     async def get_meta(self, user_id: str, rehydrate: bool = False) -> dict:
@@ -393,14 +483,18 @@ class TelegramManager:
                 await ut.disconnect()
             except Exception:
                 pass
+        await self._release_lease(user_id)
         await db.telegram_sessions.delete_one({"user_id": user_id})
 
     async def shutdown(self):
-        for ut in list(self.users.values()):
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+        for akey, ut in list(self.users.items()):
             try:
                 await ut.disconnect()
             except Exception:
                 pass
+            await self._release_lease(akey)
         self.users.clear()
 
 

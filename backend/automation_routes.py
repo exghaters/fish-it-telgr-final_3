@@ -39,6 +39,15 @@ def _validate_regex_fields(body: AutomationConfig) -> None:
             )
 
 
+@router.post("/config/reset", response_model=AutomationConfig)
+async def reset_config(akey: str = Depends(get_account_key),
+                       user: dict = Depends(get_current_user)):
+    cfg = AutomationConfig(user_id=akey)
+    cfg.updated_at = utcnow_iso()
+    await db.automation_configs.replace_one({"user_id": akey}, cfg.model_dump(), upsert=True)
+    return cfg
+
+
 @router.get("/config", response_model=AutomationConfig)
 async def get_config(akey: str = Depends(get_account_key)):
     doc = await db.automation_configs.find_one({"user_id": akey}, {"_id": 0})

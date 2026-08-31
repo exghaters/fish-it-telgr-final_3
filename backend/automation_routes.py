@@ -68,6 +68,11 @@ async def update_config(body: AutomationConfig, akey: str = Depends(get_account_
     # Starter is limited to a single bot/group target.
     if not plan_limits(user.get("plan"))["vip_multi"]:
         body.extra_allowed_chats = ""
+    # Automation must never run against a config that is being edited. Stop THIS
+    # account only (other accounts keep running) and keep it stopped — the
+    # operator has to press Start manually to run again.
+    body.enabled = False
+    await automation_engine.stop(akey)
     await db.automation_configs.update_one(
         {"user_id": akey}, {"$set": body.model_dump()}, upsert=True)
     return body

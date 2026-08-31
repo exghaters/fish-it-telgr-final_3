@@ -117,7 +117,16 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Tests: iter15 now 7 unit tests (incl. boost). Full suite 184/184. testing_agent iter18: backend 100%, no issues.
 - OPEN: "st" typed in bot/group triggers /open|/mancing (needs investigation — engine may react to outgoing user messages); Configuration page simplification requested (many fields -> group into Basic/Advanced) — pending.
 
-## Bugfix: tombol "Daftar Mancing" tidak ditekan (2026-06, iter20)
+## Feature: edit konfigurasi otomatis STOP automation akun itu (2026-06, iter21)
+- PUT /api/automation/config sekarang selalu memaksa enabled=false + automation_engine.stop(akey) SEBELUM simpan → automation tidak pernah jalan dengan config yang sedang diedit, dan tetap STOP setelah simpan (tanpa auto-start). Scoped ke akey (get_account_key) → hanya akun yang dipilih yang berhenti, akun lain tetap jalan.
+- Frontend Configuration.jsx: saat halaman dibuka & config.enabled true → POST /automation/stop + toast; save() kirim enabled:false + toast "Automation dalam kondisi STOP — tekan Start". Banner peringatan amber (data-testid=config-edit-warning) selalu tampil.
+- Tests: test_iter21_config_edit_stops.py (force enabled=false via API + isolasi stop hanya akun target). Full suite 197 passed. testing_agent iteration_21: backend 100%, frontend 100%, 0 issue.
+
+## Investigasi "st" memicu /open atau /mancing (iter21)
+- Satu-satunya handler pada pesan OUTGOING operator adalah resume-keyword handler (automation_engine.py ~L245): `if txt == keyword and pause_flag.is_set()`. EXACT match + hanya saat paused → tidak mungkin mengubah "st" jadi /open atau /mancing.
+- Kemungkinan penyebab jika benar terjadi: Resume Keyword (Mode Lanjutan) di-set "st", ATAU laporan berasal dari perilaku game/bot lain. Perlu potongan Activity Log + isi Resume Keyword dari user untuk reproduksi pasti. BELUM ada perubahan kode untuk ini.
+
+
 - ROOT CAUSE: Fish It meng-EDIT pesan "PENDAFTARAN DIBUKA" untuk menambahkan tombol + countdown SESAAT setelah teksnya muncul. Engine dulu langsung fetch sekali → tombol belum ada → "tidak ditemukan", lalu tetap menulis "ditekan" (log menyesatkan) dan menandai session aktif secara keliru → stuck di open mancing.
 - FIX (automation_engine._join_group_button): sekarang polling ~16s (8x, jeda 2s), scan 12 pesan grup terbaru tiap percobaan, match teks tombol case-insensitive, dukung deep-link t.me/telegram.me/tg:// + klik inline. Return 'deeplink'|'clicked'|None.
 - FIX (_cycle_group pendaftaran): hanya set session aktif + log "✅ ditekan" bila tombol BENAR ditekan; jika gagal → log warning + BUKA ULANG /open_mancing (bukan klaim sukses palsu).

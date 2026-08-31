@@ -24,9 +24,25 @@ export default function Configuration() {
   const [cfg, setCfg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [autoStopped, setAutoStopped] = useState(false);
 
   useEffect(() => {
-    api.get("/automation/config").then((r) => setCfg(r.data));
+    (async () => {
+      const r = await api.get("/automation/config");
+      setCfg(r.data);
+      // Opening the config of a RUNNING account must stop it first so we never
+      // run against a half-edited config. Only this account is affected.
+      if (r.data?.enabled) {
+        try {
+          await api.post("/automation/stop");
+          setCfg((c) => ({ ...c, enabled: false }));
+          setAutoStopped(true);
+          toast.info("Automation akun ini dihentikan karena konfigurasi sedang dibuka. Tekan Start untuk menjalankan lagi.");
+        } catch {
+          /* ignore */
+        }
+      }
+    })();
   }, []);
 
   const update = (k, v) => setCfg((c) => ({ ...c, [k]: v }));
@@ -34,8 +50,10 @@ export default function Configuration() {
   const save = async () => {
     setBusy(true);
     try {
-      await api.put("/automation/config", cfg);
-      toast.success("Konfigurasi tersimpan");
+      const r = await api.put("/automation/config", { ...cfg, enabled: false });
+      setCfg(r.data);
+      setAutoStopped(true);
+      toast.success("Konfigurasi tersimpan. Automation dalam kondisi STOP — tekan Start untuk menjalankan.");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal simpan");
     } finally {
@@ -90,6 +108,18 @@ export default function Configuration() {
             {busy ? "Menyimpan..." : "Simpan"}
           </Button>
         </div>
+      </div>
+
+      <div
+        data-testid="config-edit-warning"
+        className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+      >
+        <span className="mt-0.5">⚠️</span>
+        <p>
+          Mengedit konfigurasi akan <span className="font-semibold">menghentikan automation akun ini</span>.
+          {autoStopped && " Automation sudah dihentikan."} Setelah menyimpan, buka halaman{" "}
+          <span className="font-semibold">Status</span> dan tekan <span className="font-semibold">Start</span> untuk menjalankan kembali. Akun Telegram lain tidak terpengaruh.
+        </p>
       </div>
 
       <Section title="Target & Mode" icon={<Sliders size={18} />}>

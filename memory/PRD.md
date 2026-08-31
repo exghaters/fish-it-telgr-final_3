@@ -117,7 +117,14 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Tests: iter15 now 7 unit tests (incl. boost). Full suite 184/184. testing_agent iter18: backend 100%, no issues.
 - OPEN: "st" typed in bot/group triggers /open|/mancing (needs investigation — engine may react to outgoing user messages); Configuration page simplification requested (many fields -> group into Basic/Advanced) — pending.
 
-## Fix: register sekali per ronde + cleanup DB (2026-06, iter23)
+## Fix: status Telegram flip-flop / minta nomor HP terus (2026-06, iter24)
+- GEJALA (produksi botcraft-telegram-1.emergent.host, multi-worker): akun Telegram bergantian "Session aktif" ↔ "Belum terhubung / Setup diperlukan", selalu minta nomor HP.
+- ROOT CAUSE: get_meta(rehydrate=True) membuat client hidup tiap polling status. Di multi-worker hanya 1 worker pemegang lease/koneksi → worker lain gagal rehydrate → lapor "belum terhubung". Rehydrate per-status juga berisiko duplicate session (2-IP).
+- FIX (telegram_manager.py): status TIDAK lagi membuat client. get_meta membaca flag `authorized` yang dipersist di telegram_sessions. _persist_session set authorized=True saat login sukses; get_or_create sinkronkan authorized True/False saat client benar-benar connect (self-correct bila session dicabut server-side). Legacy doc (ada session_enc, belum ada flag) dianggap authorized=True agar akun lama tidak diminta login ulang.
+- Tests: test_iter24_status_stable.py (db di-mock, unit). Full suite 203 passed. (Tanpa testing_agent atas permintaan user.)
+- CATATAN: fix ada di kode preview; user perlu REDEPLOY ke produksi agar berlaku di botcraft-telegram-1.emergent.host.
+
+
 - User konfirmasi alur benar (screenshot): klik "Daftar Mancing" = kirim /start daftar2_<idgrup> ke bot dari deep-link tombol (mis. @fish_it_vip3_bot) → bot balas "Pendaftaran Berhasil". Sudah sesuai fix iter22.
 - BUG baru dari screenshot: /start terkirim berulang ("Sudah Terdaftar!" berkali-kali) karena pesan "PENDAFTARAN DIBUKA" meng-edit countdown tiap detik → memicu klik ulang.
 - FIX: flag _joined_round di AutomationRunner. _cycle_group 'pendaftaran' skip jika sudah join ronde ini; di-set True setelah join sukses; di-reset saat waktu_habis / cancelled / session_done.

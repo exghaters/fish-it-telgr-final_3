@@ -123,6 +123,7 @@ class UserTelegram:
                 "display_name": self.display_name,
                 "api_id": self.api_id,
                 "api_hash_enc": fernet.encrypt(self.api_hash.encode()).decode(),
+                "authorized": True,
                 "updated_at": utcnow_iso(),
             }},
             upsert=True,
@@ -432,35 +433,51 @@ class TelegramManager:
             ut = UserTelegram(user_id, int(eff_api_id), eff_api_hash, session_str)
             ut.phone = doc.get("phone") if doc else None
             ut.display_name = doc.get("display_name") if doc else None
+            authed = False
             try:
                 await ut.connect()
-                if await ut.is_authorized():
+                authed = await ut.is_authorized()
+                if authed:
                     ut._install_default_handler()
             except Exception:
                 await self._release_lease(user_id)
                 raise
             self.users[user_id] = ut
             self.start_heartbeat()
+            # Keep the persisted status flag in sync so /status is stable and
+            # consistent across workers (and self-corrects if Telegram revoked
+            # the session server-side).
+            try:
+                await db.telegram_sessions.update_one(
+                    {"user_id": user_id}, {"$set": {"authorized": bool(authed)}})
+            except Exception:
+                pass
             return ut
 
     async def get_meta(self, user_id: str, rehydrate: bool = False) -> dict:
         doc = await db.telegram_sessions.find_one(
-            {"user_id": user_id}, {"_id": 0, "session_enc": 0, "api_hash_enc": 0}
+            {"user_id": user_id}, {"_id": 0, "api_hash_enc": 0}
         )
-        connected = False
+        # Status must NOT depend on holding a live client. On a multi-worker /
+        # multi-replica deployment only ONE worker owns the live session, so
+        # rehydrating a client here would (a) make status flip between
+        # connected/not-connected depending on which worker answers, and (b) risk
+        # a duplicate session ("authorization key used under two IPs"). We report
+        # authorization from a persisted flag; if THIS worker happens to hold a
+        # live authorized client we trust that. The flag self-corrects whenever a
+        # worker actually connects the client (login / automation start).
+        has_session = bool(doc and doc.get("session_enc"))
+        authorized_flag = doc.get("authorized") if doc else None
+        if authorized_flag is None:
+            connected = has_session  # legacy sessions: a stored session == logged in
+        else:
+            connected = bool(authorized_flag)
         ut = self.users.get(user_id)
-        # Rehydrate a live client from the stored encrypted session when asked
-        # (e.g. after a backend restart or switching back to this account).
-        if ut is None and rehydrate and doc and doc.get("api_id"):
-            try:
-                ut = await self.get_or_create(user_id)
-            except Exception:
-                ut = None
         if ut and ut.client and ut.client.is_connected():
             try:
                 connected = await ut.client.is_user_authorized()
             except Exception:
-                connected = False
+                pass
         result = {
             "connected": connected,
             "phone": doc.get("phone") if doc else None,

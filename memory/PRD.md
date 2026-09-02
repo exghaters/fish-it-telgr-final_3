@@ -117,7 +117,13 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Tests: iter15 now 7 unit tests (incl. boost). Full suite 184/184. testing_agent iter18: backend 100%, no issues.
 - OPEN: "st" typed in bot/group triggers /open|/mancing (needs investigation — engine may react to outgoing user messages); Configuration page simplification requested (many fields -> group into Basic/Advanced) — pending.
 
-## Fix: status Telegram flip-flop / minta nomor HP terus (2026-06, iter24)
+## Fix robustness: join dedupe pakai message_id (2026-06, iter24b)
+- RISIKO ditemukan: guard _joined_round (boolean) bisa NYANGKUT True bila pola waktu_habis/session_done tidak match → ronde berikutnya PENDAFTARAN DIBUKA di-SKIP → "bot tidak mau tekan Daftar Mancing". 
+- FIX: ganti ke self._joined_message_id. Skip HANYA jika message_id sama (countdown edit pesan yang sama). Ronde baru = message_id baru → tetap di-join walau reset gagal. Tetap reset ke None saat waktu_habis/cancelled/session_done sebagai lapis kedua.
+- Tests: test_iter23_register_once.py diperbarui (dedupe by id + new round). Full suite 203 passed.
+- PENTING: user menguji di PRODUKSI (emergent.host) yang kemungkinan masih kode lama. Semua fix ada di preview → WAJIB REDEPLOY agar berlaku di produksi.
+
+
 - GEJALA (produksi botcraft-telegram-1.emergent.host, multi-worker): akun Telegram bergantian "Session aktif" ↔ "Belum terhubung / Setup diperlukan", selalu minta nomor HP.
 - ROOT CAUSE: get_meta(rehydrate=True) membuat client hidup tiap polling status. Di multi-worker hanya 1 worker pemegang lease/koneksi → worker lain gagal rehydrate → lapor "belum terhubung". Rehydrate per-status juga berisiko duplicate session (2-IP).
 - FIX (telegram_manager.py): status TIDAK lagi membuat client. get_meta membaca flag `authorized` yang dipersist di telegram_sessions. _persist_session set authorized=True saat login sukses; get_or_create sinkronkan authorized True/False saat client benar-benar connect (self-correct bila session dicabut server-side). Legacy doc (ada session_enc, belum ada flag) dianggap authorized=True agar akun lama tidak diminta login ulang.

@@ -1,8 +1,10 @@
-"""Iteration 23 — group mode must register ONCE per round.
+"""Iteration 23 — group mode must register ONCE per registration message.
 
 Real bug (screenshots): the "PENDAFTARAN DIBUKA" message edits its countdown
-(60→59→…) every second, re-firing the pendaftaran match and causing repeated
-/start deep-links ("✅ Sudah Terdaftar!" spam). Guarded by _joined_round.
+(60→59→…) every second — same message id — re-firing the pendaftaran match and
+causing repeated /start deep-links ("✅ Sudah Terdaftar!" spam). We now dedupe on
+the message id (a NEW round has a NEW id and IS joined again). This is robust
+even if the WAKTU HABIS / session-done pattern fails to match.
 """
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -24,7 +26,7 @@ def _mk_runner():
     return r, ut
 
 
-def test_register_once_per_round_then_reopen():
+def test_register_once_per_message_then_new_round():
     async def run():
         r, ut = _mk_runner()
         cfg = AutomationConfig(user_id="u1", mode="group",
@@ -36,44 +38,49 @@ def test_register_once_per_round_then_reopen():
             return "deeplink"
         r._join_group_button = fake_join
 
-        async def wait_pendaftaran(c, rules, timeout):
-            return {"_matched": "pendaftaran", "message_id": 123}
-        r._wait_for_any = wait_pendaftaran
+        def wait_msg(mid):
+            async def w(c, rules, timeout):
+                return {"_matched": "pendaftaran", "message_id": mid}
+            return w
 
-        # 1st cycle registers.
+        # 1st cycle: PENDAFTARAN msg 123 -> register.
+        r._wait_for_any = wait_msg(123)
         await r._cycle_group(cfg)
         assert join_calls == [123]
-        assert r._joined_round is True
+        assert r._joined_message_id == 123
 
-        # 2nd cycle: countdown edit re-fires pendaftaran -> must NOT re-register.
+        # Same message id re-fires (countdown edit) -> must NOT re-register.
         await r._cycle_group(cfg)
-        assert join_calls == [123], "should not double-register within a round"
+        assert join_calls == [123], "must not double-register the same message"
 
-        # WAKTU HABIS resets the round.
-        async def wait_waktu(c, rules, timeout):
-            return {"_matched": "waktu_habis", "message_id": 200}
-        r._wait_for_any = wait_waktu
+        # NEW round = NEW message id -> registers again (even without a reset).
+        r._wait_for_any = wait_msg(456)
         await r._cycle_group(cfg)
-        assert r._joined_round is False
-
-        # New round -> registers again.
-        r._wait_for_any = wait_pendaftaran
-        await r._cycle_group(cfg)
-        assert join_calls == [123, 123]
+        assert join_calls == [123, 456]
+        assert r._joined_message_id == 456
     asyncio.run(run())
 
 
-def test_session_done_resets_round():
+def test_waktu_habis_and_session_done_reset_join_marker():
     async def run():
         r, ut = _mk_runner()
         cfg = AutomationConfig(user_id="u1", mode="group",
                                group_username="@grp", bot_username="@fish_it_vip3_bot")
-        r._joined_round = True
+
+        r._joined_message_id = 999
+
+        async def wait_waktu(c, rules, timeout):
+            return {"_matched": "waktu_habis", "message_id": 1}
+        r._wait_for_any = wait_waktu
+        await r._cycle_group(cfg)
+        assert r._joined_message_id is None
+
+        r._joined_message_id = 888
         r._process_session_result = AsyncMock()
 
         async def wait_done(c, rules, timeout):
-            return {"_matched": "session_done", "message_id": 5, "text": "SESI SELESAI"}
+            return {"_matched": "session_done", "message_id": 2, "text": "SESI SELESAI"}
         r._wait_for_any = wait_done
         await r._cycle_group(cfg)
-        assert r._joined_round is False
+        assert r._joined_message_id is None
     asyncio.run(run())

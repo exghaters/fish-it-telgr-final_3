@@ -247,10 +247,24 @@ class AutomationRunner:
         async def _on_out(event):
             try:
                 txt = (event.raw_text or "").strip().lower()
-                if keyword and txt == keyword and runner.pause_flag.is_set():
-                    await runner._event("resume", "info",
-                                        f"Keyword '{keyword}' terdeteksi di Telegram — resume")
-                    await runner.resume()
+                if not txt:
+                    return
+                # "dvk" (resume keyword): treat verification as done and continue.
+                if keyword and txt == keyword:
+                    await runner._event(
+                        "resume", "info",
+                        f"Keyword '{keyword}' terdeteksi di Telegram — lanjutkan flow")
+                    if runner.pause_flag.is_set():
+                        await runner.resume()          # loop re-sends pending command
+                    else:
+                        await runner._resend_pending_after_verify(force=True)
+                    return
+                # "st": force-restart the fishing flow (private /mancing or group).
+                if txt == "st":
+                    await runner._event(
+                        "message-in", "info",
+                        "Perintah 'st' terdeteksi — paksa mulai ulang flow mancing")
+                    await runner._force_restart()
             except Exception:
                 pass
 
@@ -269,6 +283,40 @@ class AutomationRunner:
         except Exception:
             pass
         self._resume_handler = None
+
+    async def _force_restart(self):
+        """Force the fishing flow to (re)start now — triggered by the 'st' keyword.
+
+        PRIVATE: send /mancing again. GROUP: re-send /open_mancing and reset the
+        per-round join marker so the next "PENDAFTARAN DIBUKA" is joined. Drains
+        stale queued events first; idempotent enough for manual recovery.
+        """
+        try:
+            cfg = await self._load_config()
+            ut = await self._get_client()
+        except Exception:
+            return
+        if self.pause_flag.is_set():
+            await self.resume()
+        self._paused_for_verify = False
+        self._pending_after_verify = None
+        await self._drain_queue()
+        if cfg.mode == "group":
+            self._joined_message_id = None
+            self._group_kickstarted = True
+            grp = cfg.group_username
+            cmd = self._group_open_command(cfg)
+            if grp:
+                await ut.send_command(grp, cmd)
+                await self._event("message-out", "info",
+                                  f"[st] Mulai ulang grup → {cmd} → {grp}")
+        else:
+            target = cfg.bot_username
+            if target:
+                await ut.send_command(target, cfg.open_command)
+                self._pending_after_verify = (target, cfg.open_command)
+                await self._event("message-out", "info",
+                                  f"[st] Mulai ulang → {cfg.open_command} → {target}")
 
     # ---- Multi-chat event wait (group mode pump) ----
     async def _wait_for_any(self, cfg: AutomationConfig, rules: list,

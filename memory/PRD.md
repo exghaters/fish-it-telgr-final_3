@@ -117,7 +117,15 @@ Rebuild of a buggy Telegram automation SaaS for the "Fish It" game. Reported bug
 - Tests: iter15 now 7 unit tests (incl. boost). Full suite 184/184. testing_agent iter18: backend 100%, no issues.
 - OPEN: "st" typed in bot/group triggers /open|/mancing (needs investigation — engine may react to outgoing user messages); Configuration page simplification requested (many fields -> group into Basic/Advanced) — pending.
 
-## Fix robustness: join dedupe pakai message_id (2026-06, iter24b)
+## Trigger st/dvk + README final (2026-06, iter25)
+- 'dvk' (resume keyword): handler pesan-keluar sekarang resume + lanjut command tertunda (/mancing) otomatis; tidak wajib pause_flag exact — resume bila paused, else resend force. Case-insensitive.
+- 'st': force-restart flow — PRIVATE kirim open_command (/mancing); GROUP kirim group_open_command (/open_mancing) + reset _joined_message_id + kickstart. Drain antrian dulu. Method baru _force_restart().
+- Konfirmasi (tidak diubah, sudah benar & event-driven): /boost hanya dikirim saat "AUTO MANCING DIMULAI" (bot) / "PERAHU SIAP BERANGKAT" (group) via _maybe_boost; verifikasi klik tombol via _handle_verification (match "verifikasi", best-effort, pause+resume). Inventory TIDAK disentuh.
+- README.md ditulis ulang lengkap (20 bagian) mencerminkan kode aktual.
+- Tests: test_iter25_st_dvk_triggers.py (3). Full suite 206 passed, 0 gagal.
+- Sisa perlu verifikasi LIVE Telegram: klik join/verify nyata, dvk end-to-end via app resmi, urutan mancing→boost sesi nyata. Produksi perlu REDEPLOY.
+
+
 - RISIKO ditemukan: guard _joined_round (boolean) bisa NYANGKUT True bila pola waktu_habis/session_done tidak match → ronde berikutnya PENDAFTARAN DIBUKA di-SKIP → "bot tidak mau tekan Daftar Mancing". 
 - FIX: ganti ke self._joined_message_id. Skip HANYA jika message_id sama (countdown edit pesan yang sama). Ronde baru = message_id baru → tetap di-join walau reset gagal. Tetap reset ke None saat waktu_habis/cancelled/session_done sebagai lapis kedua.
 - Tests: test_iter23_register_once.py diperbarui (dedupe by id + new round). Full suite 203 passed.
